@@ -1,0 +1,45 @@
+{
+  "name": "Filezilla",
+  "available": true,
+  "port": 8211,
+  "exposable": true,
+  "dynamic_config": true,
+  "id": "filezilla",
+  "description": "FileZilla Client is a fast and reliable cross-platform FTP, FTPS and SFTP client with lots of useful features and an intuitive graphical user interface. This image runs the desktop client in a web-based KasmVNC session.",
+  "tipi_version": 2,
+  "version": "3.69.6",
+  "categories": [
+    "network",
+    "utilities"
+  ],
+  "short_desc": "Fast and reliable FTP, FTPS and SFTP client in your browser.",
+  "author": "linuxserver.io",
+  "source": "https://github.com/linuxserver/docker-filezilla",
+  "website": "https://hub.docker.com/r/linuxserver/filezilla",
+  "supported_architectures": [
+    "amd64",
+    "arm64"
+  ],
+  "created_at": 1792823700000,
+  "updated_at": 1794308253100,
+  "$schema": "../app-info-schema.json",
+  "min_tipi_version": "4.7.0",
+  "form_fields": [
+    {
+      "type": "text",
+      "label": "Web UI username",
+      "hint": "Username for the browser login (default: abc)",
+      "required": false,
+      "default": "abc",
+      "env_variable": "FILEZILLA_USER"
+    },
+    {
+      "type": "password",
+      "label": "Web UI password",
+      "hint": "Protects the web interface",
+      "min": 8,
+      "required": true,
+      "env_variable": "FILEZILLA_PASSWORD"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+services:
+  filezilla:
+    image: linuxserver/filezilla:3.69.6@sha256:a22863a26e29b566fa6bc883bc5cfda9074f6b4a0b42588045f1f40c57aa3e49
+    container_name: filezilla
+    restart: unless-stopped
+    # KasmVNC benötigt ausreichend Shared Memory
+    shm_size: "1gb"
+    security_opt:
+      - seccomp:unconfined
+    environment:
+      PUID: ${UID}
+      PGID: ${GID}
+      TZ: ${TZ}
+      # Login für die Web-Oberfläche (aus den App-Einstellungen in Runtipi)
+      CUSTOM_USER: ${FILEZILLA_USER}
+      PASSWORD: ${FILEZILLA_PASSWORD}
+    volumes:
+      - ${APP_DATA_DIR}/data/config:/config
+    x-runtipi:
+      is_main: true
+      internal_port: 3000
+x-runtipi:
+  schema_version: 2

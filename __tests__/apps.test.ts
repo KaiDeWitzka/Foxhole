@@ -30,7 +30,7 @@ describe("each app should have the required files", async () => {
   const apps = await getApps()
 
   for (const app of apps) {
-    const files = ['config.json', 'docker-compose.json', 'metadata/logo.jpg', 'metadata/description.md']
+    const files = ['config.json', 'docker-compose.yml', 'metadata/logo.jpg', 'metadata/description.md']
 
     for (const file of files) {
       test(`app ${app} should have ${file}`, async () => {
@@ -59,20 +59,33 @@ describe("each app should have a valid config.json", async () => {
   }
 })
 
-describe("each app should have a valid docker-compose.json", async () => {
+describe("each app should have a valid docker-compose.yml", async () => {
   const apps = await getApps()
 
   for (const app of apps) {
-    test(`app ${app} should have a valid docker-compose.json`, async () => {
-      const fileContent = await getFile(app, 'docker-compose.json')
-      const parsed = dynamicComposeSchema(JSON.parse(fileContent || '{}'))
+    test(`app ${app} should have a valid docker-compose.yml`, async () => {
+      const fileContent = await getFile(app, 'docker-compose.yml')
+      expect(fileContent).not.toBeNull()
 
-      if (parsed instanceof type.errors) {
-        const validationError = fromError(parsed);
-        console.error(`Error parsing docker-compose.json for app ${app}:`, validationError.toString());
+      const compose = Bun.YAML.parse(fileContent || '') as any
+
+      // Top-level Runtipi extension
+      expect(compose?.['x-runtipi']?.schema_version).toBe(2)
+
+      // At least one service
+      const services = Object.entries(compose?.services ?? {}) as [string, any][]
+      expect(services.length).toBeGreaterThan(0)
+
+      // Every service needs an image
+      for (const [name, service] of services) {
+        if (!service?.image) console.error(`Service ${name} in app ${app} has no image`)
+        expect(service?.image).toBeTruthy()
       }
 
-      expect(parsed instanceof type.errors).toBe(false)
+      // Exactly one main service with an internal port
+      const mainServices = services.filter(([, s]) => s?.['x-runtipi']?.is_main === true)
+      expect(mainServices.length).toBe(1)
+      expect(mainServices[0][1]['x-runtipi'].internal_port).toBeDefined()
     })
   }
 });

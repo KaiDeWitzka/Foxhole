@@ -6,8 +6,8 @@ services:
     # Firefox braucht mehr Shared Memory, sonst stürzen Tabs ab
     shm_size: "2gb"
     environment:
-      USER_ID: ${UID}
-      GROUP_ID: ${GID}
+      USER_ID: "1000"
+      GROUP_ID: "1000"
       TZ: ${TZ}
       # Passwort für Web-Oberfläche und VNC (aus den App-Einstellungen in Runtipi)
       VNC_PASSWORD: ${FIREFOX_VNC_PASSWORD}

@@ -8,8 +8,8 @@ services:
     security_opt:
       - seccomp:unconfined
     environment:
-      PUID: ${UID}
-      PGID: ${GID}
+      PUID: "1000"
+      PGID: "1000"
       TZ: ${TZ}
       # Login für die Web-Oberfläche (aus den App-Einstellungen in Runtipi)
       CUSTOM_USER: ${FILEZILLA_USER}

@@ -1,0 +1,26 @@
+services:
+  psitransfer:
+    image: psitrax/psitransfer:v2.4.4@sha256:312d060e0e2934ff618b3e361d766872b89892dc33c5456858b4aa04dc17a18d
+    container_name: psitransfer
+    restart: unless-stopped
+    # Das Image läuft als Benutzer "node" (UID 1000)
+    user: "1000:1000"
+    environment:
+      TZ: ${TZ}
+      # Passwort für die /admin-Seite (aus den App-Einstellungen in Runtipi)
+      PSITRANSFER_ADMIN_PASS: ${PSITRANSFER_ADMIN_PASS}
+      # Upload-Passwort (leer = öffentliche Uploads)
+      PSITRANSFER_UPLOAD_PASS: ${PSITRANSFER_UPLOAD_PASS}
+      # Bucket-Passwort erzwingen
+      PSITRANSFER_REQUIRE_BUCKET_PASSWORD: "false"
+      # Standard-Aufbewahrung in Sekunden (604800 = 1 Woche)
+      PSITRANSFER_DEFAULT_RETENTION: "604800"
+      # Maximales Alter von Dateien in Sekunden (6480000 = 75 Tage)
+      PSITRANSFER_MAX_AGE: "6480000"
+    volumes:
+      - ${APP_DATA_DIR}/data:/data
+    x-runtipi:
+      is_main: true
+      internal_port: 3000
+x-runtipi:
+  schema_version: 2

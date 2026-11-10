@@ -1,0 +1,44 @@
+{
+  "name": "Firefox (jlesage)",
+  "available": true,
+  "port": 8212,
+  "exposable": true,
+  "dynamic_config": true,
+  "id": "jlesage-firefox",
+  "description": "Firefox running in a Docker container. The GUI of the application is accessed through a modern web browser (no installation or configuration needed on the client side) or via any VNC client.",
+  "tipi_version": 2,
+  "version": "v26.09.1",
+  "categories": [
+    "utilities"
+  ],
+  "short_desc": "Firefox web browser, accessible through your browser.",
+  "author": "jlesage",
+  "source": "https://github.com/jlesage/docker-firefox",
+  "website": "https://hub.docker.com/r/jlesage/firefox",
+  "supported_architectures": [
+    "amd64",
+    "arm64"
+  ],
+  "created_at": 1792823783000,
+  "updated_at": 1794308253100,
+  "$schema": "../app-info-schema.json",
+  "min_tipi_version": "4.7.0",
+  "form_fields": [
+    {
+      "type": "password",
+      "label": "Access password",
+      "hint": "Password for the web interface and VNC access",
+      "min": 6,
+      "required": true,
+      "env_variable": "FIREFOX_VNC_PASSWORD"
+    },
+    {
+      "type": "text",
+      "label": "Start page",
+      "hint": "URL opened when Firefox starts (optional)",
+      "required": false,
+      "default": "about:blank",
+      "env_variable": "FIREFOX_OPEN_URL"
+    }
+  ]
+}

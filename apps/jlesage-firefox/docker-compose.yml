@@ -1,0 +1,22 @@
+services:
+  jlesage-firefox:
+    image: jlesage/firefox:v26.09.1@sha256:302aa068dcfa46a2d248771c998f67377383554df8940252caef42b99c13eb65
+    container_name: jlesage-firefox
+    restart: unless-stopped
+    # Firefox braucht mehr Shared Memory, sonst stürzen Tabs ab
+    shm_size: "2gb"
+    environment:
+      USER_ID: ${UID}
+      GROUP_ID: ${GID}
+      TZ: ${TZ}
+      # Passwort für Web-Oberfläche und VNC (aus den App-Einstellungen in Runtipi)
+      VNC_PASSWORD: ${FIREFOX_VNC_PASSWORD}
+      # Startseite beim Öffnen von Firefox
+      FF_OPEN_URL: ${FIREFOX_OPEN_URL}
+    volumes:
+      - ${APP_DATA_DIR}/data/config:/config:rw
+    x-runtipi:
+      is_main: true
+      internal_port: 5800
+x-runtipi:
+  schema_version: 2

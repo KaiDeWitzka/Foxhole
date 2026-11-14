@@ -11,7 +11,7 @@
   ],
   "description": "Scannt das lokale Netzwerk (Router/Gateway, Switche, Server/NAS, Clients, Drucker, Smart-Home/IoT) und erzeugt eine interaktive HTML-Netzwerkkarte mit IP-Adresse, MAC-Adresse, Hostname, Hersteller (OUI) und offenen Ports je Geraet. Die Karte wird zyklisch neu gescannt und laesst sich z. B. per iframe in WikiJS einbetten. Der Scanner laeuft im Host-Netzwerkmodus, damit MAC-Adressen per ARP aufgeloest werden. Unmanaged Switche/Hubs ohne eigene IP sind nicht sichtbar.",
   "tipi_version": 2,
-  "version": "1.1.0",
+  "version": "1.2.0",
   "source": "https://github.com/KaiDeWitzka/netmap",
   "website": "https://github.com/KaiDeWitzka/netmap",
   "exposable": true,
@@ -20,7 +20,7 @@
     "amd64"
   ],
   "created_at": 1794649747509,
-  "updated_at": 1794657862320,
+  "updated_at": 1794663508297,
   "dynamic_config": true,
   "min_tipi_version": "4.7.0",
   "form_fields": [
@@ -39,6 +39,54 @@
       "required": false,
       "default": "900",
       "env_variable": "NETZ_SCAN_INTERVAL"
+    },
+    {
+      "type": "text",
+      "label": "FRITZ!Box TR-064 URL",
+      "hint": "z. B. http://192.168.178.1:49000 (leer = http://<Gateway>:49000 automatisch)",
+      "required": false,
+      "default": "",
+      "env_variable": "NETZ_FITZ_URL"
+    },
+    {
+      "type": "text",
+      "label": "FRITZ!Box TR-064 Benutzer",
+      "hint": "Benutzer mit Heimnetz-Zugriff; TR-064 in der Box aktivieren: Heimnetz → Netzwerk → Netzwerkeinstellungen → „Anwendungen im Heimnetz erlauben (TR-064)“",
+      "required": false,
+      "default": "",
+      "env_variable": "NETZ_FITZ_USER"
+    },
+    {
+      "type": "password",
+      "label": "FRITZ!Box TR-064 Passwort",
+      "hint": "wird nur als Env-Variable an den Scanner-Container weitergegeben",
+      "required": false,
+      "default": "",
+      "env_variable": "NETZ_FITZ_PASS"
+    },
+    {
+      "type": "text",
+      "label": "IPs der FRITZ!Repeater",
+      "hint": "kommagetrennt, z. B. 192.168.178.20,192.168.178.21 (Mesh-Übersicht der Box); leer = keine Repeater-Abfrage",
+      "required": false,
+      "default": "",
+      "env_variable": "NETZ_REPEATER_IPS"
+    },
+    {
+      "type": "text",
+      "label": "LAN-Parent (kabelgebundene Geräte)",
+      "hint": "IP des Switches, an dem alle kabelgebundenen Clients hängen (z. B. 192.168.178.2 für einen TL-SG108E); leer = Gateway",
+      "required": false,
+      "default": "",
+      "env_variable": "NETZ_LAN_PARENT"
+    },
+    {
+      "type": "text",
+      "label": "Pfad topology.json (manuelles Mapping)",
+      "hint": "z. B. /data/topology.json mit {\"192.168.178.40\": \"192.168.178.2\"} (IP/MAC → Parent-IP); leer = aus",
+      "required": false,
+      "default": "",
+      "env_variable": "NETZ_TOPOLOGY"
     }
   ]
 }

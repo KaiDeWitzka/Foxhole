@@ -25,33 +25,37 @@ interaktiv: Zoom/Pan, Klick auf ein Gerät für Details (bei Router/Switch inkl.
 
 ## Exporte (PDF, CSV, Markdown, JSON)
 
-Über die App-Einstellung **`NETZ_EXPORT`** (z. B. `all` oder `pdf,csv,md`) werden bei jedem Scan
-zusätzliche Exporte nach `data/web/` geschrieben und in der Karte oben rechts als Download-Buttons
-angezeigt: `netzwerkkarte.pdf` (A4 quer, reine Standardbibliothek), `netzwerkkarte.csv`,
-`netzwerkkarte.md` sowie `scan.json` (JSON, immer vorhanden). Erreichbar z. B. über
-`https://<runtipi-host>:8399/netzwerkkarte.pdf`.
+Im Menü **„Einstellungen“** der Webseite (Feld „Exporte erzeugen“, z. B. `all` oder `pdf,csv,md`)
+werden bei jedem Scan zusätzliche Exporte nach `data/web/` geschrieben und in der Karte oben
+rechts als Download-Buttons angezeigt: `netzwerkkarte.pdf` (A4 quer, reine Standardbibliothek),
+`netzwerkkarte.csv`, `netzwerkkarte.md` sowie `scan.json` (JSON, immer vorhanden). Erreichbar z. B.
+über `https://<runtipi-host>:8399/netzwerkkarte.pdf`.
 
 ## Topologie: wer hängt an welchem Gerät?
 
 In der Karte zeigt jeder Router/Switch/Repeater seine **angeschlossenen Geräte** (Klick hebt sie
 hervor; Panel und Tabelle zeigen „Verbunden mit“). Automatisch über die App-Einstellungen:
 
-- **FRITZ!Box / FRITZ!Repeater per TR-064:** `NETZ_FRITZ_URL`, `NETZ_FRITZ_USER`, `NETZ_FRITZ_PASS`
-  (TR-064 in der Box aktivieren: *Heimnetz → Netzwerk → Netzwerkeinstellungen → „Anwendungen im
-  Heimnetz erlauben (TR-064)“*) + `NETZ_REPEATER_IPS` (kommagetrennte Repeater-IPs aus der
-  Mesh-Übersicht). WLAN-Clients werden dem jeweiligen Repeater zugeordnet, WLAN-Clients direkt
-  an der Box dem Gateway.
-- **SNMPv2c (CAM-Tabelle):** `NETZ_SNMP_COMMUNITY` (Standard: `public`) und optional
-  `NETZ_SNMP_SWITCHES` (kommagetrennte IPs; leer = alle als Switch erkannten Geräte). Liest die
-  MAC→Port-Tabelle (`dot1dTpFdbTable`) — funktioniert nur bei SNMP-fähigen verwalteten Switchen
-  (z. B. TL-SG3xxx, Netgear GSxxxE, MikroTik, UniFi), **nicht** beim TL-SG108E (kein SNMP in
-  irgendeiner Firmware).
+- **FRITZ!Box per TR-064:** `NETZ_FRITZ_URL`, `NETZ_FRITZ_USER`, `NETZ_FRITZ_PASS` in den
+  App-Einstellungen (TR-064 in der Box aktivieren: *Heimnetz → Netzwerk → Netzwerkeinstellungen
+  → „Anwendungen im Heimnetz erlauben (TR-064)“*). WLAN-Clients direkt an der Box werden dem
+  Gateway zugeordnet.
+- **FRITZ!Repeater-IPs** (kommagetrennte IPs aus der Mesh-Übersicht) und **SNMP-Switch-IPs**
+  pflegst du im Menü **„Einstellungen“** der Webseite (s. u.) – nicht mehr in den
+  Runtipi-App-Einstellungen. WLAN-Clients werden so dem jeweiligen Repeater zugeordnet.
+- **SNMPv2c (CAM-Tabelle):** `NETZ_SNMP_COMMUNITY` (Standard: `public`) in den App-Einstellungen,
+  Switch-IPs optional im Menü „Einstellungen“ (leer = alle als Switch erkannten Geräte).
+  Liest die MAC→Port-Tabelle (`dot1dTpFdbTable`) — funktioniert nur bei SNMP-fähigen
+  verwalteten Switchen (z. B. TL-SG3xxx, Netgear GSxxxE, MikroTik, UniFi), **nicht** beim
+  TL-SG108E (kein SNMP in irgendeiner Firmware).
 
-**Manuelle Ergänzungen** (z. B. für den TL-SG108E) pflegst du direkt in der Webseite über das
-**Menü „Topologie“** (oben rechts neben Karte/Tabelle): Mapping `{"192.168.178.40": "192.168.178.2"}`
-(IP oder MAC → Parent-IP) plus LAN-Parent für kabelgebundene Clients. Wird nach
-`${APP_DATA_DIR}/data/config/` gespeichert und beim nächsten Scan wirksam — keine
-Runtipi-Konfiguration nötig. Ergebnis in der Karte: „Switch <IP> Port <N> (SNMP)“.
+**Manuelle Ergänzungen** (z. B. für den TL-SG108E) und alle weiteren Einstellungen pflegst du direkt
+in der Webseite über das **Menü „Einstellungen“** (oben rechts neben Karte/Tabelle): Mapping
+`{"192.168.178.40": "192.168.178.2"}` (IP oder MAC → Parent-IP), LAN-Parent für kabelgebundene
+Clients, Repeater-IPs, SNMP-Switch-IPs und Exporte. Wird nach `${APP_DATA_DIR}/data/config/`
+(`topology.json` + `settings.json`) gespeichert und beim nächsten Scan wirksam — dafür ist **keine
+Datenbank** nötig, die Dateien unter `data/` reichen (Runtipi sichert `APP_DATA_DIR` mit den
+App-Backups). Ergebnis in der Karte: „Switch <IP> Port <N> (SNMP)“ bzw. „manuell zugeordnet“.
 
 ## In WikiJS einbetten
 

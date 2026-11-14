@@ -42,7 +42,7 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from datetime import datetime
 
-VERSION = "1.6.0"
+VERSION = "1.7.0"
 
 # ---------------------------------------------------------------------------
 # Hersteller-Datenbank (OUI, kuratierte Auswahl haeufiger Hersteller)
@@ -499,15 +499,28 @@ def tr064_hosts(base_url, user, password, timeout=5):
         return None
 
 
-def _web_config(key):
-    """Wert aus der in der Web-UI gepflegten Datei /data/config/settings.json (Runtipi-App)."""
+def _web_config_all():
+    """Alle Werte aus der in der Web-UI gepflegten Datei /data/config/settings.json (Runtipi-App)."""
     p = "/data/config/settings.json"
     if os.path.exists(p):
         try:
-            return json.load(open(p, encoding="utf-8")).get(key, "") or ""
+            v = json.load(open(p, encoding="utf-8"))
+            return v if isinstance(v, dict) else {}
         except Exception:
             pass
-    return ""
+    return {}
+
+
+def _web_config(key):
+    """Einzelner Wert aus settings.json (siehe _web_config_all)."""
+    return _web_config_all().get(key, "") or ""
+
+
+def _cfg_list(v):
+    """Wert aus settings.json/Env als Liste: akzeptiert Liste oder kommagetrennten String."""
+    if isinstance(v, (list, tuple)):
+        return [str(x).strip() for x in v if str(x).strip()]
+    return [x.strip() for x in str(v or "").split(",") if x.strip()]
 
 
 def load_topology_file(path):
@@ -531,7 +544,8 @@ def resolve_topology(devices, gateway, fritz_url=None, fritz_user=None, fritz_pa
     fritz_url = fritz_url or os.environ.get("NETZ_FRITZ_URL", "") or (
         "http://%s:49000" % gateway if gateway else "")
     if repeater_ips is None:
-        repeater_ips = [x.strip() for x in os.environ.get("NETZ_REPEATER_IPS", "").split(",") if x.strip()]
+        repeater_ips = ([x.strip() for x in os.environ.get("NETZ_REPEATER_IPS", "").split(",") if x.strip()]
+                        or _cfg_list(_web_config_all().get("repeater_ips")))
     lan_parent = lan_parent or os.environ.get("NETZ_LAN_PARENT", "") or _web_config("lan_parent") or gateway or ""
     topology_file = topology_file or os.environ.get("NETZ_TOPOLOGY", "") or (
         "/data/config/topology.json" if os.path.exists("/data/config/topology.json") else "")
@@ -563,7 +577,8 @@ def resolve_topology(devices, gateway, fritz_url=None, fritz_user=None, fritz_pa
                 d["notes"].append("LAN (kabelgebunden)")
     snmp_community = snmp_community or os.environ.get("NETZ_SNMP_COMMUNITY", "public")
     if snmp_switches is None:
-        snmp_switches = [x.strip() for x in os.environ.get("NETZ_SNMP_SWITCHES", "").split(",") if x.strip()]
+        snmp_switches = ([x.strip() for x in os.environ.get("NETZ_SNMP_SWITCHES", "").split(",") if x.strip()]
+                         or _cfg_list(_web_config_all().get("snmp_switches")))
     if not snmp_switches:
         snmp_switches = [d["ip"] for d in devices if d.get("category") == "switch" and d["ip"] != gateway]
     if snmp_switches:
@@ -1018,13 +1033,13 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .views button.active { background:var(--accent); border-color:var(--accent); color:#06121f; font-weight:600; }
   #exports { display:flex; gap:6px; align-items:center; }
   #exports a { color:var(--text); text-decoration:none; display:inline-block; }
-  #topoWrap { overflow:auto; }
+  #settingsWrap { overflow:auto; }
   .topoPanel { max-width:780px; margin:24px auto; background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:16px; }
   .topoPanel h2 { margin:0 0 8px; font-size:16px; }
   .muted { color:var(--muted); font-size:12px; }
   #topoJson { width:100%; height:220px; background:var(--panel2); color:var(--text); border:1px solid var(--line); border-radius:6px; font:12px/1.4 monospace; padding:8px; box-sizing:border-box; }
-  #lanParent { background:var(--panel2); border:1px solid var(--line); color:var(--text); border-radius:6px; padding:6px 10px; width:230px; }
-  #btnSaveTopo { background:var(--panel2); border:1px solid var(--line); color:var(--text); border-radius:6px; padding:6px 12px; cursor:pointer; }
+  #lanParent, #repeaterIps, #snmpSwitches, #exportFmt { background:var(--panel2); border:1px solid var(--line); color:var(--text); border-radius:6px; padding:6px 10px; width:230px; }
+  #btnSaveCfg { background:var(--panel2); border:1px solid var(--line); color:var(--text); border-radius:6px; padding:6px 12px; cursor:pointer; }
   .topoRow { display:flex; gap:10px; align-items:center; margin:10px 0; flex-wrap:wrap; }
   .topoPanel pre { background:var(--panel2); border:1px solid var(--line); border-radius:6px; padding:8px; font-size:12px; overflow:auto; }
   main { position:relative; height:calc(100% - 96px); }
@@ -1082,7 +1097,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     <div class="views">
       <button id="btnMap" class="active">Karte</button>
       <button id="btnTable">Tabelle</button>
-      <button id="btnTopo">Topologie</button>
+      <button id="btnSettings">Einstellungen</button>
       <button id="btnReset" title="Ansicht zuruecksetzen">Ansicht</button>
     </div>
     <span id="exports"></span>
@@ -1105,19 +1120,33 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       <tbody></tbody>
     </table>
   </div>
-  <div id="topoWrap" class="hidden">
+  <div id="settingsWrap" class="hidden">
     <div class="topoPanel">
-      <h2>Topologie bearbeiten</h2>
-      <p class="muted">Manuelles Mapping — überschreibt TR-064/SNMP: Schlüssel = IP oder MAC des Geräts, Wert = IP des Parent (Switch/Repeater/Router). Leer lassen löscht die Datei. Wirksam beim nächsten Scan.</p>
+      <h2>Einstellungen</h2>
+      <p class="muted">Werden in <code>data/config/</code> gespeichert (topology.json + settings.json) und beim nächsten Scan wirksam — eine Datenbank ist dafür nicht nötig. In der Runtipi-App genügt dieser Menüpunkt; die früheren App-Einstellungen (Repeater-IPs, SNMP-Switch-IPs, Exporte) sind hierher umgezogen.</p>
+      <h3 style="margin:14px 0 6px;font-size:14px;">Manuelles Topologie-Mapping (topology.json)</h3>
+      <p class="muted">Überschreibt TR-064/SNMP: Schlüssel = IP oder MAC des Geräts, Wert = IP des Parent (Switch/Repeater/Router). Leer lassen löscht die Datei.</p>
       <textarea id="topoJson" spellcheck="false" placeholder='{"192.168.178.40": "192.168.178.2"}'></textarea>
-      <div class="topoRow">
-        <label class="muted">LAN-Parent: <input id="lanParent" type="text" placeholder="z. B. 192.168.178.2 (leer = Gateway)"></label>
-        <button id="btnSaveTopo">Speichern</button>
-        <span id="topoStatus" class="muted"></span>
-      </div>
       <p class="muted">Beispiel:</p>
       <pre>{"192.168.178.40": "192.168.178.2",
  "AC:BC:32:44:55:66": "192.168.178.2"}</pre>
+      <h3 style="margin:14px 0 6px;font-size:14px;">Verbindungen &amp; Exporte</h3>
+      <div class="topoRow">
+        <label class="muted">LAN-Parent: <input id="lanParent" type="text" placeholder="z. B. 192.168.178.2 (leer = Gateway)"></label>
+      </div>
+      <div class="topoRow">
+        <label class="muted">FRITZ!Repeater-IPs: <input id="repeaterIps" type="text" placeholder="kommagetrennt, z. B. 192.168.178.20,192.168.178.21"></label>
+      </div>
+      <div class="topoRow">
+        <label class="muted">SNMP-Switch-IPs: <input id="snmpSwitches" type="text" placeholder="kommagetrennt (leer = alle erkannten Switche)"></label>
+      </div>
+      <div class="topoRow">
+        <label class="muted">Exporte erzeugen: <input id="exportFmt" type="text" placeholder="all oder pdf,csv,md (leer = nur scan.json + HTML)"></label>
+      </div>
+      <div class="topoRow">
+        <button id="btnSaveCfg">Speichern</button>
+        <span id="cfgStatus" class="muted"></span>
+      </div>
     </div>
   </div>
 </main>
@@ -1364,33 +1393,41 @@ document.querySelectorAll("#tbl th").forEach(th=>{
   });
 });
 const btnMap=document.getElementById("btnMap"), btnTable=document.getElementById("btnTable"),
-      btnTopo=document.getElementById("btnTopo");
+      btnSettings=document.getElementById("btnSettings");
 function setView(v){
   btnMap.classList.toggle("active",v==="map");
   btnTable.classList.toggle("active",v==="table");
-  btnTopo.classList.toggle("active",v==="topo");
+  btnSettings.classList.toggle("active",v==="settings");
   document.getElementById("mapWrap").classList.toggle("hidden",v!=="map");
   document.getElementById("tableWrap").classList.toggle("hidden",v!=="table");
-  document.getElementById("topoWrap").classList.toggle("hidden",v!=="topo");
+  document.getElementById("settingsWrap").classList.toggle("hidden",v!=="settings");
   if(v==="table") renderTable();
-  if(v==="topo") loadTopo();
+  if(v==="settings") loadSettings();
 }
 btnMap.addEventListener("click",()=>setView("map"));
 btnTable.addEventListener("click",()=>setView("table"));
-btnTopo.addEventListener("click",()=>setView("topo"));
-function loadTopo(){
-  fetch("api/topology").then(r=>r.json()).then(j=>{
+btnSettings.addEventListener("click",()=>setView("settings"));
+function csv(v){ return Array.isArray(v)?v.join(","):(v||""); }
+function loadSettings(){
+  fetch("api/config").then(r=>r.json()).then(j=>{
     document.getElementById("topoJson").value=j.topology||"";
     document.getElementById("lanParent").value=j.lan_parent||"";
-    document.getElementById("topoStatus").textContent="";
-  }).catch(()=>{ document.getElementById("topoStatus").textContent="Laden fehlgeschlagen"; });
+    document.getElementById("repeaterIps").value=csv(j.repeater_ips);
+    document.getElementById("snmpSwitches").value=csv(j.snmp_switches);
+    document.getElementById("exportFmt").value=j.export||"";
+    document.getElementById("cfgStatus").textContent="";
+  }).catch(()=>{ document.getElementById("cfgStatus").textContent="Laden fehlgeschlagen"; });
 }
-document.getElementById("btnSaveTopo").addEventListener("click",()=>{
-  const st=document.getElementById("topoStatus"); st.textContent="Speichern ...";
-  fetch("api/topology",{method:"POST",headers:{"Content-Type":"application/json"},
+document.getElementById("btnSaveCfg").addEventListener("click",()=>{
+  const st=document.getElementById("cfgStatus"); st.textContent="Speichern ...";
+  const list=v=>v.split(",").map(x=>x.trim()).filter(x=>x);
+  fetch("api/config",{method:"POST",headers:{"Content-Type":"application/json"},
     body:JSON.stringify({topology:document.getElementById("topoJson").value,
-                         lan_parent:document.getElementById("lanParent").value})})
-   .then(r=>r.json()).then(j=>{ st.textContent=j.ok?("Gespeichert ("+j.devices_mapped+" Eintraege) - wirkt beim naechsten Scan"):("Fehler: "+(j.error||"?")); })
+                         lan_parent:document.getElementById("lanParent").value,
+                         repeater_ips:list(document.getElementById("repeaterIps").value),
+                         snmp_switches:list(document.getElementById("snmpSwitches").value),
+                         export:document.getElementById("exportFmt").value.trim()})})
+   .then(r=>r.json()).then(j=>{ st.textContent=j.ok?("Gespeichert ("+j.devices_mapped+" Mapping-Eintraege) - wirkt beim naechsten Scan"):("Fehler: "+(j.error||"?")); })
    .catch(()=>{ st.textContent="Fehler beim Speichern"; });
 });
 
@@ -1434,7 +1471,7 @@ def main():
     ap.add_argument("--fritz-user", default=None, help="TR-064-Benutzer (Env NETZ_FRITZ_USER; besser Env als CLI)")
     ap.add_argument("--fritz-pass", default=None, help="TR-064-Passwort (Env NETZ_FRITZ_PASS; besser Env als CLI)")
     ap.add_argument("--repeater-ips", default=None,
-                    help="kommagetrennte IPs der FRITZ!Repeater (Env NETZ_REPEATER_IPS)")
+                    help="kommagetrennte IPs der FRITZ!Repeater (Env NETZ_REPEATER_IPS; in der Runtipi-App: Web-UI 'Einstellungen')")
     ap.add_argument("--lan-parent", default=None,
                     help="IP des Geraets, an dem kabelgebundene Clients haengen (Env NETZ_LAN_PARENT, Standard: Gateway)")
     ap.add_argument("--topology", default=None,
@@ -1442,12 +1479,12 @@ def main():
     ap.add_argument("--snmp-community", default=None,
                     help="SNMPv2c Read-Community fuer verwaltete Switche (Env NETZ_SNMP_COMMUNITY, Standard: public)")
     ap.add_argument("--snmp-switches", default=None,
-                    help="kommagetrennte Switch-IPs fuer SNMP-CAM-Abfrage (Env NETZ_SNMP_SWITCHES; leer = alle als Switch erkannten Geraete)")
+                    help="kommagetrennte Switch-IPs fuer SNMP-CAM-Abfrage (Env NETZ_SNMP_SWITCHES; in der Runtipi-App: Web-UI 'Einstellungen'; leer = alle als Switch erkannten Geraete)")
     ap.add_argument("--export", default=None,
-                    help="zusaetzliche Exporte erzeugen: pdf,csv,md,json,all (kommagetrennt; Env NETZ_EXPORT); JSON ist immer scan.json")
+                    help="zusaetzliche Exporte erzeugen: pdf,csv,md,json,all (kommagetrennt; Env NETZ_EXPORT; in der Runtipi-App: Web-UI 'Einstellungen'); JSON ist immer scan.json")
     args = ap.parse_args()
 
-    export_arg = args.export or os.environ.get("NETZ_EXPORT", "")
+    export_arg = args.export or os.environ.get("NETZ_EXPORT", "") or str(_web_config("export"))
     formats = []
     for f in export_arg.split(","):
         f = f.strip().lower()

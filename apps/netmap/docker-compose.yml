@@ -5,10 +5,12 @@ services:
     restart: unless-stopped
     volumes:
       - ${APP_DATA_DIR}/data:/data:ro
+      - ${APP_DATA_DIR}/data/app:/opt/netzwerkkarte:ro
+      - ${APP_DATA_DIR}/data/certs:/certs:ro
     command:
       - /bin/sh
       - -c
-      - until [ -f /data/web/netzwerkkarte.html ]; do sleep 2; done; exec python3 -m http.server 8080 --directory /data/web
+      - until [ -f /data/web/netzwerkkarte.html ]; do sleep 2; done; i=0; until [ -f /certs/cert.pem ] || [ $i -ge 30 ]; do sleep 2; i=$((i+1)); done; exec python3 /opt/netzwerkkarte/serve_https.py
     x-runtipi:
       is_main: true
       internal_port: 8080

@@ -33,25 +33,25 @@ angezeigt: `netzwerkkarte.pdf` (A4 quer, reine Standardbibliothek), `netzwerkkar
 
 ## Topologie: wer hängt an welchem Gerät?
 
-Über die App-Einstellungen (Env-Variablen) lässt sich die Zuordnung verbessern — in der Karte
-zeigt dann jeder Router/Switch/Repeater seine **angeschlossenen Geräte** (Klick hebt sie hervor;
-Panel und Tabelle zeigen „Verbunden mit“):
+In der Karte zeigt jeder Router/Switch/Repeater seine **angeschlossenen Geräte** (Klick hebt sie
+hervor; Panel und Tabelle zeigen „Verbunden mit“). Automatisch über die App-Einstellungen:
 
 - **FRITZ!Box / FRITZ!Repeater per TR-064:** `NETZ_FRITZ_URL`, `NETZ_FRITZ_USER`, `NETZ_FRITZ_PASS`
   (TR-064 in der Box aktivieren: *Heimnetz → Netzwerk → Netzwerkeinstellungen → „Anwendungen im
   Heimnetz erlauben (TR-064)“*) + `NETZ_REPEATER_IPS` (kommagetrennte Repeater-IPs aus der
   Mesh-Übersicht). WLAN-Clients werden dem jeweiligen Repeater zugeordnet, WLAN-Clients direkt
   an der Box dem Gateway.
-- **Kabelgebundene Clients:** `NETZ_LAN_PARENT` = IP des vorgeschalteten Switches
-  (z. B. `192.168.178.2` für einen TL-SG108E; leer = Gateway).
-- **Manuelles Mapping:** `NETZ_TOPOLOGY=/data/topology.json` mit
-  `{"192.168.178.40": "192.168.178.2"}` (IP oder MAC → Parent-IP). Sinnvoll für Switche ohne
-  SNMP/LLDP (z. B. TP-Link TL-SG108E — Stock-Firmware bietet keine MAC-Tabellen-API).
 - **SNMPv2c (CAM-Tabelle):** `NETZ_SNMP_COMMUNITY` (Standard: `public`) und optional
   `NETZ_SNMP_SWITCHES` (kommagetrennte IPs; leer = alle als Switch erkannten Geräte). Liest die
   MAC→Port-Tabelle (`dot1dTpFdbTable`) — funktioniert nur bei SNMP-fähigen verwalteten Switchen
-  (z. B. TL-SG3xxx, Netgear GSxxxE, MikroTik, UniFi), **nicht** beim TL-SG108E. Ergebnis in der
-  Karte: „Switch <IP> Port <N> (SNMP)“. Reihenfolge: TR-064 → SNMP → `topology.json` (manuell gewinnt).
+  (z. B. TL-SG3xxx, Netgear GSxxxE, MikroTik, UniFi), **nicht** beim TL-SG108E (kein SNMP in
+  irgendeiner Firmware).
+
+**Manuelle Ergänzungen** (z. B. für den TL-SG108E) pflegst du direkt in der Webseite über das
+**Menü „Topologie“** (oben rechts neben Karte/Tabelle): Mapping `{"192.168.178.40": "192.168.178.2"}`
+(IP oder MAC → Parent-IP) plus LAN-Parent für kabelgebundene Clients. Wird nach
+`${APP_DATA_DIR}/data/config/` gespeichert und beim nächsten Scan wirksam — keine
+Runtipi-Konfiguration nötig. Ergebnis in der Karte: „Switch <IP> Port <N> (SNMP)“.
 
 ## In WikiJS einbetten
 
@@ -68,6 +68,11 @@ daher in eine **Markdown-Seite** als raw HTML eingebettet. Dafür einmalig unter
 Alternativ ohne iframe: normaler Markdown-Link auf `https://<runtipi-host>:8399/netzwerkkarte.html`.
 
 ## HTTPS / SSL
+
+**Aufruf der Webseite: `https://<runtipi-host>:8399/netzwerkkarte.html`** — seit v1.3.0 liefert die
+App die Karte per HTTPS aus (http:// funktioniert dann nicht mehr). Beim selbstsignierten
+Zertifikat zeigt der Browser eine Warnung → einmalig „Erweitert → trotzdem laden“ (oder eigenes
+Zertifikat hinterlegen, s. u.). Ohne Zertifikat fällt die App automatisch auf HTTP zurück.
 
 Die Web-UI liefert die Karte **per HTTPS** auf dem App-Port (8399) aus:
 

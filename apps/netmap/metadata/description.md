@@ -6,9 +6,11 @@ Scannt dein lokales Netzwerk und zeigt eine **interaktive Karte** aller gefunden
 - **Server/NAS und Clients** (anhand typischer Ports und Hersteller erkannt)
 - **Smart-Home/IoT-Geräte** (Espressif, Tuya, Philips Hue, Shelly, Sonoff …) und **Drucker**
 - Pro Gerät: **IP-Adresse, MAC-Adresse, Hostname, Hersteller (OUI), offene Ports, Kategorie**
+  sowie **„Verbunden mit“** (an welchem Router/Switch das Gerät hängt)
 
 Die Karte (eine einzige HTML-Datei, ohne externe Abhängigkeiten) wird **zyklisch neu gescannt** und ist
-interaktiv: Zoom/Pan, Klick auf ein Gerät für Details, Suche, Kategoriefilter und Tabellenansicht.
+interaktiv: Zoom/Pan, Klick auf ein Gerät für Details (bei Router/Switch inkl. Liste der
+**angeschlossenen Geräte**, in der Karte hervorgehoben), Suche, Kategoriefilter und Tabellenansicht.
 
 ## Hinweise
 
@@ -23,12 +25,17 @@ interaktiv: Zoom/Pan, Klick auf ein Gerät für Details, Suche, Kategoriefilter 
 
 ## In WikiJS einbetten
 
-WikiJS-Seite im **HTML-Editor** anlegen, unter *Administration → Rendering → HTML → Security* die
-HTML-Sanitization („Safe HTML“) deaktivieren und dann einfügen (Port laut Runtipi-App, hier 8399):
+**WikiJS 3.x** hat keinen HTML-Editor mehr (nur noch Markdown, AsciiDoc, Visuell) — die Karte wird
+daher in eine **Markdown-Seite** als raw HTML eingebettet. Dafür einmalig unter
+*Administration → Rendering → HTML → Security* **„Sanitize HTML“ deaktivieren** und
+**„Allow iframes“ aktivieren** (ab WikiJS 3.1.x empfohlen), dann einfügen
+(Port laut Runtipi-App, hier 8399):
 
 ```html
-<iframe src="http://<runtipi-host>:8399/" style="width:100%; height:900px; border:0; border-radius:8px;"></iframe>
+<iframe src="http://<runtipi-host>:8399/netzwerkkarte.html" style="width:100%; height:900px; border:0; border-radius:8px;"></iframe>
 ```
+
+Alternativ ohne iframe: normaler Markdown-Link auf `http://<runtipi-host>:8399/netzwerkkarte.html`.
 
 Bei HTTPS-WikiJS muss die Karte ebenfalls per HTTPS erreichbar sein (Mixed-Content), z. B. über einen
 Reverse Proxy.

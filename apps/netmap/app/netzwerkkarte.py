@@ -126,7 +126,7 @@ OUI = {
     "50F5DA": "Amazon (Echo)",
     "6837E9": "Amazon (Echo)",
     "000C29": "VMware",
-    "005056": "VMware",
+    "0050 56".replace(" ", ""): "VMware",
 }
 
 # Haeufig gescannte Ports -> Dienstname
@@ -419,6 +419,15 @@ def classify(dev, gateway, dns_list, local_ip):
     return dev
 
 
+def add_connected_to(devices, gateway):
+    """Logische Topologie: ohne SNMP/LLDP haengt in einem Subnetz alles am Gateway."""
+    for d in devices:
+        if gateway and d["ip"] == gateway:
+            d["connected_to"] = ""
+        else:
+            d["connected_to"] = gateway or ""
+
+
 # ---------------------------------------------------------------------------
 # Scan
 # ---------------------------------------------------------------------------
@@ -491,6 +500,7 @@ def run_scan(subnet=None, use_api=False, max_hosts=1024):
         # Klassifikation erneut mit Herstellerangabe
         for d in devices:
             classify(d, gateway, dns_list, local_ip)
+    add_connected_to(devices, gateway)
 
     data = {
         "generated": datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
@@ -511,13 +521,7 @@ def demo_data():
         return {"ip": ip, "mac": mac, "hostname": host, "vendor": vendor,
                 "ports": [[p, PORTS[p]] for p in ports], "category": cat,
                 "notes": notes or []}
-    return {
-        "generated": datetime.now().strftime("%d.%m.%Y %H:%M:%S") + " (Demo)",
-        "subnet": "192.168.178.0/24",
-        "local_ip": "192.168.178.31",
-        "gateway": "192.168.178.1",
-        "dns": ["192.168.178.1"],
-        "devices": [
+    devices = [
             d("192.168.178.1", "34:81:C4:11:22:33", "fritz.box", "AVM (FRITZ!)",
               [53, 80, 443], "router", ["Standard-Gateway dieses Netzwerks", "DNS-Server"]),
             d("192.168.178.2", "00:09:5B:AA:BB:CC", "switch-wohnzimmer", "Netgear",
@@ -543,7 +547,15 @@ def demo_data():
             d("192.168.178.53", "34:98:7A:11:22:33", "shelly-wohnzimmer", "Allterco (Shelly)",
               [80], "smart"),
             d("192.168.178.60", "50:C7:BF:10:20:30", "tv", "TP-Link", [8009], "smart"),
-        ],
+    ]
+    add_connected_to(devices, "192.168.178.1")
+    return {
+        "generated": datetime.now().strftime("%d.%m.%Y %H:%M:%S") + " (Demo)",
+        "subnet": "192.168.178.0/24",
+        "local_ip": "192.168.178.31",
+        "gateway": "192.168.178.1",
+        "dns": ["192.168.178.1"],
+        "devices": devices,
     }
 
 
@@ -592,6 +604,9 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .node.dim { opacity:.15; }
   .node.off { display:none; }
   .node.selected circle { stroke:#fff; stroke-width:3.5; }
+  .node.conn circle { stroke:#fff; stroke-width:3; }
+  .node.fade { opacity:.18; }
+  .edge.hot { stroke:var(--accent); stroke-width:2.5; }
   #panel { position:absolute; top:12px; right:12px; width:300px; max-height:calc(100% - 24px);
            overflow:auto; background:var(--panel); border:1px solid var(--line);
            border-radius:10px; padding:14px; box-shadow:0 8px 30px rgba(0,0,0,.5); z-index:5; }
@@ -644,6 +659,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       <thead><tr>
         <th data-k="ip">IP</th><th data-k="hostname">Hostname</th><th data-k="mac">MAC</th>
         <th data-k="vendor">Hersteller</th><th data-k="category">Kategorie</th>
+        <th data-k="connected_to">Verbunden mit</th>
         <th data-k="ports">Offene Ports</th><th data-k="notes">Notizen</th>
       </tr></thead>
       <tbody></tbody>
@@ -693,7 +709,8 @@ function buildGraph(){
     nodes.push(n); byId[n.id]=n;
   });
   if(DATA.gateway) edges.push({a:"internet",b:DATA.gateway});
-  devs.forEach(d=>{ if(d.ip!==DATA.gateway) edges.push({a:hubId,b:d.ip}); });
+  devs.forEach(d=>{ const p=d.connected_to||hubId;
+    if(p && p!==d.ip && byId[p]) edges.push({a:p,b:d.ip}); });
   edges.forEach(e=>{
     const l=document.createElementNS(NS,"line");
     l.setAttribute("class","edge"); edgesG.appendChild(l); e.el=l;
@@ -808,12 +825,39 @@ function render(){
   nodes.forEach(n=>{ n.el.setAttribute("transform","translate("+n.x+" "+n.y+")"); });
 }
 
+function parentIdOf(d){ return d.connected_to || (d.ip===DATA.gateway ? "internet" : ""); }
+function childIdsOf(d){ return (DATA.devices||[]).filter(x=>x.connected_to===d.ip).map(x=>x.ip); }
+function parentLabelOf(d){
+  const p=parentIdOf(d);
+  if(!p) return "-";
+  if(p==="internet") return "Internet";
+  const pd=(DATA.devices||[]).find(x=>x.ip===p);
+  return (pd&&pd.hostname)?(pd.hostname+" ("+p+")"):p;
+}
+function clearSel(){
+  nodes.forEach(x=>x.el.classList.remove("selected","conn","fade"));
+  edges.forEach(e=>e.el.classList.remove("hot"));
+}
 function select(n){
+  clearSel();
   const d=n.dev;
   if(!d){ panel.classList.add("hidden"); return; }
   const c=CATS[d.category]||CATS.unknown;
+  const pid=parentIdOf(d), kids=childIdsOf(d);
+  nodes.forEach(x=>{
+    if(x.id===n.id) return;
+    if(x.id===pid || kids.indexOf(x.id)>=0) x.el.classList.add("conn");
+    else x.el.classList.add("fade");
+  });
+  edges.forEach(e=>{ if(e.a===n.id||e.b===n.id) e.el.classList.add("hot"); });
   const ports=(d.ports||[]).map(p=>"<span>"+esc(p[0])+" "+esc(p[1])+"</span>").join("")||"<span class='note'>keine</span>";
   const notes=(d.notes||[]).map(x=>"<div class='note'>"+esc(x)+"</div>").join("");
+  let kidsHtml;
+  if(kids.length){
+    kidsHtml=kids.map(k=>{ const kd=byId[k]&&byId[k].dev; return esc((kd&&kd.hostname)||k); }).join(", ");
+  } else if(d.category==="switch"){
+    kidsHtml="<span class='note'>keine direkt erkennbar (unmanaged Switch/Hub ohne eigene IP nicht sichtbar)</span>";
+  } else kidsHtml="&mdash;";
   panel.innerHTML="<button class='close' onclick='document.getElementById(\"panel\").classList.add(\"hidden\")'>&times;</button>"
     +"<h2>"+esc(labelOf(n))+"</h2>"
     +"<div class='cat' style='background:"+c.color+"'>"+c.icon+" "+esc(c.label)+"</div>"
@@ -823,8 +867,11 @@ function select(n){
     +"<tr><td>Hostname</td><td>"+esc(d.hostname||"-")+"</td></tr>"
     +"<tr><td>Hersteller</td><td>"+esc(d.vendor||"-")+"</td></tr>"
     +"<tr><td>Offene Ports</td><td class='ports'>"+ports+"</td></tr>"
+    +"<tr><td>Verbunden mit</td><td>"+esc(parentLabelOf(d))+"</td></tr>"
+    +"<tr><td>Angeschlossene Geraete ("+kids.length+")</td><td>"+kidsHtml+"</td></tr>"
     +(notes?"<tr><td>Notizen</td><td>"+notes+"</td></tr>":"")
     +"</table>";
+  panel.querySelector(".close").addEventListener("click", clearSel);
   panel.classList.remove("hidden");
   nodes.forEach(x=>x.el.classList.toggle("selected", x===n));
 }
@@ -848,6 +895,7 @@ function renderTable(){
     tr.innerHTML="<td>"+esc(d.ip)+"</td><td>"+esc(d.hostname||"-")+"</td><td>"+esc(d.mac||"-")+"</td>"
       +"<td>"+esc(d.vendor||"-")+"</td>"
       +"<td><span class='badge' style='background:"+c.color+"'>"+esc(c.label)+"</span></td>"
+      +"<td>"+esc(parentLabelOf(d))+"</td>"
       +"<td>"+(d.ports||[]).map(p=>esc(p[0])+" "+esc(p[1])).join(", ")+"</td>"
       +"<td>"+esc((d.notes||[]).join("; "))+"</td>";
     tb.appendChild(tr);
@@ -920,7 +968,7 @@ def main():
         len(data["devices"]),
         ", ".join("%s (%s)" % (d["ip"], d["category"]) for d in data["devices"]) or "keine"))
     print("\nIn WikiJS einbinden (siehe README.md): Datei z. B. per 'python3 -m http.server 8080' hosten")
-    print("und in einer WikiJS-Seite (HTML-Editor) einfuegen:")
+    print("und in einer WikiJS-Markdown-Seite (WikiJS 3.x hat keinen HTML-Editor mehr) einfuegen:")
     print('  <iframe src="http://<server>:8080/%s" style="width:100%%;height:900px;border:0;"></iframe>' % args.html)
 
 

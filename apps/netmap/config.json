@@ -1,0 +1,44 @@
+{
+  "name": "Netmap",
+  "id": "netmap",
+  "available": true,
+  "short_desc": "Interaktive Karte deines Heimnetzwerks: scannt IPs, MACs, Hersteller und offene Ports.",
+  "author": "KaiDeWitzka",
+  "port": 8399,
+  "categories": [
+    "network",
+    "utilities"
+  ],
+  "description": "Scannt das lokale Netzwerk (Router/Gateway, Switche, Server/NAS, Clients, Drucker, Smart-Home/IoT) und erzeugt eine interaktive HTML-Netzwerkkarte mit IP-Adresse, MAC-Adresse, Hostname, Hersteller (OUI) und offenen Ports je Geraet. Die Karte wird zyklisch neu gescannt und laesst sich z. B. per iframe in WikiJS einbetten. Der Scanner laeuft im Host-Netzwerkmodus, damit MAC-Adressen per ARP aufgeloest werden. Unmanaged Switche/Hubs ohne eigene IP sind nicht sichtbar.",
+  "tipi_version": 2,
+  "version": "1.0.0",
+  "source": "https://github.com/KaiDeWitzka/netmap",
+  "website": "https://github.com/KaiDeWitzka/netmap",
+  "exposable": true,
+  "supported_architectures": [
+    "arm64",
+    "amd64"
+  ],
+  "created_at": 1794649747509,
+  "updated_at": 1794649747509,
+  "dynamic_config": true,
+  "min_tipi_version": "4.7.0",
+  "form_fields": [
+    {
+      "type": "text",
+      "label": "Zu scannendes Subnetz",
+      "hint": "z. B. 192.168.178.0/24 (leer = Subnetz des Hosts automatisch erkennen)",
+      "required": false,
+      "default": "",
+      "env_variable": "NETZ_SUBNET"
+    },
+    {
+      "type": "text",
+      "label": "Scan-Intervall in Sekunden",
+      "hint": "Wie oft die Karte neu gescannt wird (Standard: 900 = 15 Minuten)",
+      "required": false,
+      "default": "900",
+      "env_variable": "NETZ_SCAN_INTERVAL"
+    }
+  ]
+}

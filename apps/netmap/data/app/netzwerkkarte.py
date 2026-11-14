@@ -36,6 +36,8 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from datetime import datetime
 
+VERSION = "1.4.0"
+
 # ---------------------------------------------------------------------------
 # Hersteller-Datenbank (OUI, kuratierte Auswahl haeufiger Hersteller)
 # Schluessel: erste 3 Oktette der MAC ohne Trennzeichen, Grossbuchstaben.
@@ -503,7 +505,8 @@ def load_topology_file(path):
 
 
 def resolve_topology(devices, gateway, fritz_url=None, fritz_user=None, fritz_pass=None,
-                     repeater_ips=None, lan_parent=None, topology_file=None):
+                     repeater_ips=None, lan_parent=None, topology_file=None,
+                     snmp_community=None, snmp_switches=None):
     """'connected_to' pro Geraet: TR-064 (Box/Repeater) -> topology.json -> Gateway (Fallback)."""
     add_connected_to(devices, gateway)
     fritz_user = fritz_user or os.environ.get("NETZ_FRITZ_USER", "")
@@ -540,6 +543,25 @@ def resolve_topology(devices, gateway, fritz_url=None, fritz_user=None, fritz_pa
             elif h and "ethernet" in h["interface"].lower():
                 d["connected_to"] = lan_parent
                 d["notes"].append("LAN (kabelgebunden)")
+    snmp_community = snmp_community or os.environ.get("NETZ_SNMP_COMMUNITY", "public")
+    if snmp_switches is None:
+        snmp_switches = [x.strip() for x in os.environ.get("NETZ_SNMP_SWITCHES", "").split(",") if x.strip()]
+    if not snmp_switches:
+        snmp_switches = [d["ip"] for d in devices if d.get("category") == "switch" and d["ip"] != gateway]
+    if snmp_switches:
+        cam_by_mac = {}
+        for sw in snmp_switches:
+            cam = snmp_cam_table(sw, snmp_community)
+            if cam:
+                print("SNMP: %d MAC-Eintraege von Switch %s gelesen" % (len(cam), sw))
+            for mac, port in cam:
+                cam_by_mac[mac] = (sw, port)
+        for d in devices:
+            mac = norm_mac_full(d.get("mac", ""))
+            if mac and mac in cam_by_mac:
+                sw, p = cam_by_mac[mac]
+                d["connected_to"] = sw
+                d["notes"].append("Switch %s Port %d (SNMP)" % (sw, p))
     mapping = load_topology_file(topology_file)
     if mapping:
         for d in devices:
@@ -548,6 +570,144 @@ def resolve_topology(devices, gateway, fritz_url=None, fritz_user=None, fritz_pa
             if parent:
                 d["connected_to"] = parent
                 d["notes"].append("manuell zugeordnet (topology.json)")
+
+
+# ---------------------------------------------------------------------------
+# Minimaler SNMPv2c-Client (nur Standardbibliothek: BER + UDP/161)
+# Liefert die CAM/MAC-Tabelle (dot1dTpFdbTable) eines verwalteten Switches.
+# Achtung: Easy-Smart-Switche wie der TL-SG108E sprechen KEIN SNMP - fuer die
+# bleibt der topology.json-Fallback. Funktioniert fuer SNMP-faehige Switche
+# (z. B. TL-SG3xxx, Netgear GSxxxE ProSAFE, MikroTik, UniFi).
+# ---------------------------------------------------------------------------
+def _ber_len(n):
+    if n < 0x80:
+        return bytes([n])
+    b = n.to_bytes((n.bit_length() + 7) // 8, "big")
+    return bytes([0x80 | len(b)]) + b
+
+
+def _ber_tlv(tag, content):
+    return bytes([tag]) + _ber_len(len(content)) + content
+
+
+def _ber_int(v):
+    if v == 0:
+        return _ber_tlv(0x02, b"\x00")
+    b = v.to_bytes((v.bit_length() + 7) // 8, "big")
+    if b[0] & 0x80:
+        b = b"\x00" + b
+    return _ber_tlv(0x02, b)
+
+
+def _ber_oid(oid):
+    parts = [int(x) for x in oid.split(".")]
+    body = bytearray()
+    for p in [parts[0] * 40 + parts[1]] + parts[2:]:
+        stack = [p & 0x7F]
+        p >>= 7
+        while p:
+            stack.append(0x80 | (p & 0x7F))
+            p >>= 7
+        body.extend(reversed(stack))
+    return _ber_tlv(0x06, bytes(body))
+
+
+def _ber_parse(data, off=0):
+    tag = data[off]
+    off += 1
+    l = data[off]
+    off += 1
+    if l & 0x80:
+        n = l & 0x7F
+        l = int.from_bytes(data[off:off + n], "big")
+        off += n
+    return tag, data[off:off + l], off + l
+
+
+def _oid_to_str(content):
+    if not content:
+        return ""
+    first = content[0]
+    parts = [first // 40, first % 40]
+    val = 0
+    for b in content[1:]:
+        val = (val << 7) | (b & 0x7F)
+        if not (b & 0x80):
+            parts.append(val)
+            val = 0
+    return ".".join(str(p) for p in parts)
+
+
+def _snmp_request(community, pdu_tag, reqid, oids):
+    varbinds = b"".join(_ber_tlv(0x30, _ber_oid(o) + _ber_tlv(0x05, b"")) for o in oids)
+    pdu = _ber_tlv(pdu_tag, _ber_int(reqid) + _ber_int(0) + _ber_int(0) + _ber_tlv(0x30, varbinds))
+    return _ber_tlv(0x30, _ber_int(1) + _ber_tlv(0x04, community.encode("utf-8")) + pdu)
+
+
+def _snmp_parse_response(data):
+    try:
+        _, msg, _ = _ber_parse(data, 0)
+        _, _, off = _ber_parse(msg, 0)
+        _, _, off = _ber_parse(msg, off)
+        _, pdu, _ = _ber_parse(msg, off)
+        _, _, off = _ber_parse(pdu, 0)
+        _, _, off = _ber_parse(pdu, off)
+        _, _, off = _ber_parse(pdu, off)
+        _, vblist, _ = _ber_parse(pdu, off)
+        out = []
+        o = 0
+        while o < len(vblist):
+            _, vb, o = _ber_parse(vblist, o)
+            _, void, p = _ber_parse(vb, 0)
+            vtag, vval, _ = _ber_parse(vb, p)
+            out.append((_oid_to_str(void), vtag, vval))
+        return out
+    except Exception:
+        return []
+
+
+def snmp_walk(host, community, root, port=161, timeout=2.0, max_rows=512):
+    """SNMPv2c GETNEXT-Walk ab root; liefert [(oid, tag, value_bytes), ...]."""
+    out = []
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.settimeout(timeout)
+    reqid = int(time.time()) & 0x7FFFFFFF
+    oid = root
+    try:
+        while len(out) < max_rows:
+            s.sendto(_snmp_request(community, 0xA1, reqid, [oid]), (host, port))
+            data, _ = s.recvfrom(65535)
+            vbs = _snmp_parse_response(data)
+            if not vbs:
+                break
+            noid, ntag, nval = vbs[0]
+            if noid == oid or not noid.startswith(root + "."):
+                break
+            out.append((noid, ntag, nval))
+            oid = noid
+            reqid += 1
+    except (socket.timeout, OSError):
+        pass
+    finally:
+        s.close()
+    return out
+
+
+def snmp_cam_table(host, community, port=161, timeout=2.0):
+    """MAC->Port-Tabelle eines Switches via dot1dTpFdbTable; [] bei Fehler/Timeout."""
+    root = "1.3.6.1.2.1.17.4.3.1"
+    macs, ports = {}, {}
+    for oid, tag, val in snmp_walk(host, community, root, port, timeout):
+        rest = oid[len(root) + 1:].split(".")
+        if len(rest) < 2:
+            continue
+        col, idx = int(rest[0]), rest[1:]
+        key = ".".join(idx)
+        if col == 1 and tag == 0x04 and len(idx) == 6:
+            macs[key] = bytes(int(x) for x in idx).hex().upper()
+        elif col == 2 and tag == 0x02:
+            ports[key] = int.from_bytes(val, "big")
+    return [(mac, ports.get(key, 0)) for key, mac in macs.items()]
 
 
 # ---------------------------------------------------------------------------
@@ -625,6 +785,7 @@ def run_scan(subnet=None, use_api=False, max_hosts=1024, topo=None):
     resolve_topology(devices, gateway, **(topo or {}))
 
     data = {
+        "version": VERSION,
         "generated": datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
         "subnet": str(net),
         "local_ip": local_ip,
@@ -678,7 +839,8 @@ def demo_data():
             d["connected_to"] = demo_topo[d["ip"]]
             d["notes"].append("Demo: haengt an %s" % demo_topo[d["ip"]])
     return {
-        "generated": datetime.now().strftime("%d.%m.%Y %H:%M:%S") + " (Demo)",
+        "version": VERSION,
+        "generated": datetime.now().strftime("%d.%m.%Y %H:%M:%S") + " (Demo)", 
         "subnet": "192.168.178.0/24",
         "local_ip": "192.168.178.31",
         "gateway": "192.168.178.1",
@@ -1047,7 +1209,7 @@ btnTable.addEventListener("click",()=>{ btnTable.classList.add("active"); btnMap
 document.getElementById("meta").textContent=
   (DATA.devices||[]).length+" Geraete \u00B7 Subnetz "+DATA.subnet+" \u00B7 Scan: "+DATA.generated;
 document.getElementById("foot").textContent=
-  "Erzeugt von netzwerkkarte.py am "+DATA.generated+" \u00B7 Gateway: "+(DATA.gateway||"nicht gefunden")+
+  "Erzeugt von netzwerkkarte.py v"+(DATA.version||"?")+" am "+DATA.generated+" \u00B7 Gateway: "+(DATA.gateway||"nicht gefunden")+
   " \u00B7 Hinweis: Unmanaged Switche/Hubs ohne eigene IP-Adresse sind im Netzwerk nicht sichtbar.";
 buildGraph(); applyView(); applyFilters(); heat();
 </script>
@@ -1080,6 +1242,10 @@ def main():
                     help="IP des Geraets, an dem kabelgebundene Clients haengen (Env NETZ_LAN_PARENT, Standard: Gateway)")
     ap.add_argument("--topology", default=None,
                     help="Pfad zu topology.json mit manuellem Mapping {\"<ip oder mac>\": \"<parent-ip>\"} (Env NETZ_TOPOLOGY)")
+    ap.add_argument("--snmp-community", default=None,
+                    help="SNMPv2c Read-Community fuer verwaltete Switche (Env NETZ_SNMP_COMMUNITY, Standard: public)")
+    ap.add_argument("--snmp-switches", default=None,
+                    help="kommagetrennte Switch-IPs fuer SNMP-CAM-Abfrage (Env NETZ_SNMP_SWITCHES; leer = alle als Switch erkannten Geraete)")
     args = ap.parse_args()
 
     os.makedirs(args.out_dir, exist_ok=True)
@@ -1099,6 +1265,9 @@ def main():
                              if args.repeater_ips else None),
             "lan_parent": args.lan_parent,
             "topology_file": args.topology,
+            "snmp_community": args.snmp_community,
+            "snmp_switches": ([x.strip() for x in args.snmp_switches.split(",") if x.strip()]
+                              if args.snmp_switches else None),
         }
         data = run_scan(subnet=args.subnet, use_api=args.vendor_api, topo=topo)
         with open(os.path.join(args.out_dir, args.json), "w", encoding="utf-8") as f:

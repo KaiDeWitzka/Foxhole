@@ -49,13 +49,26 @@ daher in eine **Markdown-Seite** als raw HTML eingebettet. Dafür einmalig unter
 (Port laut Runtipi-App, hier 8399):
 
 ```html
-<iframe src="http://<runtipi-host>:8399/netzwerkkarte.html" style="width:100%; height:900px; border:0; border-radius:8px;"></iframe>
+<iframe src="https://<runtipi-host>:8399/netzwerkkarte.html" style="width:100%; height:900px; border:0; border-radius:8px;"></iframe>
 ```
 
-Alternativ ohne iframe: normaler Markdown-Link auf `http://<runtipi-host>:8399/netzwerkkarte.html`.
+Alternativ ohne iframe: normaler Markdown-Link auf `https://<runtipi-host>:8399/netzwerkkarte.html`.
 
-Bei HTTPS-WikiJS muss die Karte ebenfalls per HTTPS erreichbar sein (Mixed-Content), z. B. über einen
-Reverse Proxy.
+## HTTPS / SSL
+
+Die Web-UI liefert die Karte **per HTTPS** auf dem App-Port (8399) aus:
+
+- Beim ersten Start erzeugt der Scanner ein **selbstsigniertes Zertifikat** in
+  `${APP_DATA_DIR}/data/certs/` (SAN enthält die Host-IP des Servers). Im Browser erscheint
+  daher eine Zertifikatswarnung — einmal "trotzdem laden" bzw. das Zertifikat im System
+  vertrauen (Runtipi ≥ 1.5 bietet dafür ein eigenes Zertifikat an, das man im Runtipi-Dashboard
+  unter Einstellungen herunterladen und ins Trust-Store legen kann).
+- **Eigenes Zertifikat** (z. B. von LAN-CA, Let's Encrypt oder Nginx Proxy Manager): einfach
+  `cert.pem` + `key.pem` nach `${APP_DATA_DIR}/data/certs/` legen — vorhandene Dateien werden
+  nicht überschrieben und bevorzugt verwendet.
+- Ohne Zertifikat (z. B. kein `openssl` verfügbar): automatischer Fallback auf HTTP.
+
+Damit ist die Karte auch aus einem **HTTPS-WikiJS** per iframe einbettbar (kein Mixed-Content mehr).
 
 ## Quelle
 

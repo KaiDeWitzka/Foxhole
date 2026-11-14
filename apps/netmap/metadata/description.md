@@ -1,0 +1,35 @@
+# Netmap – Netzwerkkarte deines Netzwerks
+
+Scannt dein lokales Netzwerk und zeigt eine **interaktive Karte** aller gefundenen Geräte als Webseite:
+
+- **Netzkomponenten**: Router/Gateway, verwaltete Switche & Access Points
+- **Server/NAS und Clients** (anhand typischer Ports und Hersteller erkannt)
+- **Smart-Home/IoT-Geräte** (Espressif, Tuya, Philips Hue, Shelly, Sonoff …) und **Drucker**
+- Pro Gerät: **IP-Adresse, MAC-Adresse, Hostname, Hersteller (OUI), offene Ports, Kategorie**
+
+Die Karte (eine einzige HTML-Datei, ohne externe Abhängigkeiten) wird **zyklisch neu gescannt** und ist
+interaktiv: Zoom/Pan, Klick auf ein Gerät für Details, Suche, Kategoriefilter und Tabellenansicht.
+
+## Hinweise
+
+- Der Scanner-Container läuft im **Host-Netzwerkmodus** (`NET_RAW`/`NET_ADMIN`), damit MAC-Adressen
+  per ARP aufgelöst werden können. Ohne eigene IP sind unmanaged Switche/Hubs nicht sichtbar.
+- **Subnetz** und **Scan-Intervall** sind in den App-Einstellungen von Runtipi konfigurierbar
+  (`NETZ_SUBNET`, z. B. `192.168.178.0/24`; `NETZ_SCAN_INTERVAL` in Sekunden, Standard 900).
+- Die Ergebnisse liegen unter `data/web/` (`netzwerkkarte.html` + `scan.json`).
+
+## In WikiJS einbetten
+
+WikiJS-Seite im **HTML-Editor** anlegen, unter *Administration → Rendering → HTML → Security* die
+HTML-Sanitization („Safe HTML“) deaktivieren und dann einfügen (Port laut Runtipi-App, hier 8399):
+
+```html
+<iframe src="http://<runtipi-host>:8399/" style="width:100%; height:900px; border:0; border-radius:8px;"></iframe>
+```
+
+Bei HTTPS-WikiJS muss die Karte ebenfalls per HTTPS erreichbar sein (Mixed-Content), z. B. über einen
+Reverse Proxy.
+
+## Quelle
+
+Scanner & Karten-Generator: [KaiDeWitzka/netmap](https://github.com/KaiDeWitzka/netmap)

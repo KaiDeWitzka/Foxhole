@@ -1,0 +1,35 @@
+services:
+  netzwerkkarte:
+    image: python:3.12-alpine
+    container_name: netmap
+    restart: unless-stopped
+    volumes:
+      - ${APP_DATA_DIR}/data:/data:ro
+    command:
+      - /bin/sh
+      - -c
+      - mkdir -p /data/web; until [ -f /data/web/netzwerkkarte.html ]; do sleep 2; done; exec python3 -m http.server 8080 --directory /data/web
+    x-runtipi:
+      is_main: true
+      internal_port: 8080
+  netzwerkkarte-scanner:
+    image: python:3.12-alpine
+    container_name: netmap-scanner
+    restart: unless-stopped
+    # Host-Netzwerk, damit ARP/MAC-Adressen des LAN aufgeloest werden koennen
+    network_mode: host
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    environment:
+      TZ: ${TZ}
+      NETZ_SUBNET: ${NETZ_SUBNET:-}
+      NETZ_SCAN_INTERVAL: ${NETZ_SCAN_INTERVAL:-900}
+    volumes:
+      - ./app:/opt/netzwerkkarte:ro
+      - ${APP_DATA_DIR}/data:/data
+    entrypoint:
+      - /bin/sh
+      - /opt/netzwerkkarte/entrypoint.sh
+x-runtipi:
+  schema_version: 2

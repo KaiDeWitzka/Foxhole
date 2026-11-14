@@ -23,6 +23,23 @@ interaktiv: Zoom/Pan, Klick auf ein Gerät für Details (bei Router/Switch inkl.
   nach `${APP_DATA_DIR}/data/app` kopiert (dokumentierter Runtipi-Mechanismus). Nach einem App-Update
   am besten kurz neu installieren, damit die neueste Version des Skripts aktiv wird.
 
+## Topologie: wer hängt an welchem Gerät?
+
+Über die App-Einstellungen (Env-Variablen) lässt sich die Zuordnung verbessern — in der Karte
+zeigt dann jeder Router/Switch/Repeater seine **angeschlossenen Geräte** (Klick hebt sie hervor;
+Panel und Tabelle zeigen „Verbunden mit“):
+
+- **FRITZ!Box / FRITZ!Repeater per TR-064:** `NETZ_FRITZ_URL`, `NETZ_FRITZ_USER`, `NETZ_FRITZ_PASS`
+  (TR-064 in der Box aktivieren: *Heimnetz → Netzwerk → Netzwerkeinstellungen → „Anwendungen im
+  Heimnetz erlauben (TR-064)“*) + `NETZ_REPEATER_IPS` (kommagetrennte Repeater-IPs aus der
+  Mesh-Übersicht). WLAN-Clients werden dem jeweiligen Repeater zugeordnet, WLAN-Clients direkt
+  an der Box dem Gateway.
+- **Kabelgebundene Clients:** `NETZ_LAN_PARENT` = IP des vorgeschalteten Switches
+  (z. B. `192.168.178.2` für einen TL-SG108E; leer = Gateway).
+- **Manuelles Mapping:** `NETZ_TOPOLOGY=/data/topology.json` mit
+  `{"192.168.178.40": "192.168.178.2"}` (IP oder MAC → Parent-IP). Sinnvoll für Switche ohne
+  SNMP/LLDP (z. B. TP-Link TL-SG108E — Stock-Firmware bietet keine MAC-Tabellen-API).
+
 ## In WikiJS einbetten
 
 **WikiJS 3.x** hat keinen HTML-Editor mehr (nur noch Markdown, AsciiDoc, Visuell) — die Karte wird

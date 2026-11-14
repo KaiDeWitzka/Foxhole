@@ -31,6 +31,9 @@ import struct
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
+import xml.etree.ElementTree as ET
 from datetime import datetime
 
 # ---------------------------------------------------------------------------
@@ -428,10 +431,129 @@ def add_connected_to(devices, gateway):
             d["connected_to"] = gateway or ""
 
 
+def norm_mac_full(mac):
+    return re.sub(r"[^0-9A-Fa-f]", "", mac or "").upper()
+
+
+# ---------------------------------------------------------------------------
+# TR-064 (FRITZ!Box / FRITZ!Repeater) - optionale Topologie-Informationen
+# Nur Standardbibliothek: HTTP-Digest-Auth (urllib) + SOAP/XML (ElementTree).
+# ---------------------------------------------------------------------------
+def _tr064_opener(base_url, user, password):
+    pw = urllib.request.HTTPPasswordMgrWithDefaultRealm()
+    pw.add_password(None, base_url, user, password)
+    return urllib.request.build_opener(urllib.request.HTTPDigestAuthHandler(pw))
+
+
+def _tr064_call(opener, base_url, action, params=None, timeout=5):
+    svc = "urn:dslforum-org:service:Hosts:1"
+    body = ('<?xml version="1.0"?>'
+            '<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" '
+            's:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">'
+            '<s:Body><u:%s xmlns:u="%s">' % (action, svc))
+    for k, v in (params or {}).items():
+        body += "<%s>%s</%s>" % (k, v, k)
+    body += "</u:%s></s:Body></s:Envelope>" % action
+    req = urllib.request.Request(
+        base_url.rstrip("/") + "/upnp/control/hosts",
+        data=body.encode("utf-8"), method="POST",
+        headers={"Content-Type": 'text/xml; charset="utf-8"',
+                 "SOAPAction": '%s#%s' % (svc, action)})
+    with opener.open(req, timeout=timeout) as r:
+        root = ET.fromstring(r.read().decode("utf-8", "replace"))
+    out = {}
+    for el in root.iter():
+        tag = el.tag.split("}")[-1]
+        if tag.startswith("New") and el.text is not None:
+            out[tag] = el.text.strip()
+    return out
+
+
+def tr064_hosts(base_url, user, password, timeout=5):
+    """Hosts-Liste eines FRITZ!-Geraets (Box oder Repeater) per TR-064 (Service Hosts:1)."""
+    if not (user and password and base_url):
+        return None
+    try:
+        opener = _tr064_opener(base_url, user, password)
+        n = int(_tr064_call(opener, base_url, "GetHostNumberOfEntries").get("NewHostNumberOfEntries", "0") or 0)
+        hosts = []
+        for i in range(n):
+            h = _tr064_call(opener, base_url, "GetGenericHostEntry", {"NewIndex": str(i)})
+            mac = norm_mac_full(h.get("NewMACAddress", ""))
+            if mac:
+                hosts.append({"ip": h.get("NewIPAddress", ""), "mac": mac,
+                              "hostname": h.get("NewHostName", ""),
+                              "interface": h.get("NewInterfaceType", ""),
+                              "active": h.get("NewActive", "0") == "1"})
+        return hosts
+    except Exception as e:
+        print("TR-064-Abfrage %s fehlgeschlagen: %s" % (base_url, e))
+        return None
+
+
+def load_topology_file(path):
+    if not path or not os.path.exists(path):
+        return {}
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        print("topology-Datei %s nicht lesbar: %s" % (path, e))
+        return {}
+
+
+def resolve_topology(devices, gateway, fritz_url=None, fritz_user=None, fritz_pass=None,
+                     repeater_ips=None, lan_parent=None, topology_file=None):
+    """'connected_to' pro Geraet: TR-064 (Box/Repeater) -> topology.json -> Gateway (Fallback)."""
+    add_connected_to(devices, gateway)
+    fritz_user = fritz_user or os.environ.get("NETZ_FRITZ_USER", "")
+    fritz_pass = fritz_pass or os.environ.get("NETZ_FRITZ_PASS", "")
+    fritz_url = fritz_url or os.environ.get("NETZ_FRITZ_URL", "") or (
+        "http://%s:49000" % gateway if gateway else "")
+    if repeater_ips is None:
+        repeater_ips = [x.strip() for x in os.environ.get("NETZ_REPEATER_IPS", "").split(",") if x.strip()]
+    lan_parent = lan_parent or os.environ.get("NETZ_LAN_PARENT", "") or gateway or ""
+    topology_file = topology_file or os.environ.get("NETZ_TOPOLOGY", "")
+    if fritz_user and fritz_pass and fritz_url:
+        box_hosts = tr064_hosts(fritz_url, fritz_user, fritz_pass) or []
+        by_mac = {h["mac"]: h for h in box_hosts}
+        by_ip = {h["ip"]: h for h in box_hosts if h["ip"]}
+        repeater_macs = {}
+        for rip in repeater_ips:
+            rh = tr064_hosts("http://%s:49000" % rip, fritz_user, fritz_pass)
+            if rh:
+                for h in rh:
+                    repeater_macs[h["mac"]] = rip
+        if box_hosts or repeater_macs:
+            print("TR-064: %d Hosts an der Box, %d MAC(s) ueber Repeater" % (len(box_hosts), len(repeater_macs)))
+        for d in devices:
+            if gateway and d["ip"] == gateway:
+                continue
+            mac = norm_mac_full(d.get("mac", ""))
+            h = by_mac.get(mac) or by_ip.get(d["ip"])
+            if mac and mac in repeater_macs:
+                d["connected_to"] = repeater_macs[mac]
+                d["notes"].append("WLAN ueber Repeater %s" % repeater_macs[mac])
+            elif h and "ethernet" not in h["interface"].lower():
+                d["connected_to"] = gateway or ""
+                d["notes"].append("WLAN direkt an der FRITZ!Box")
+            elif h and "ethernet" in h["interface"].lower():
+                d["connected_to"] = lan_parent
+                d["notes"].append("LAN (kabelgebunden)")
+    mapping = load_topology_file(topology_file)
+    if mapping:
+        for d in devices:
+            mac = norm_mac_full(d.get("mac", ""))
+            parent = mapping.get(d["ip"]) or mapping.get(mac) or mapping.get(mac.lower())
+            if parent:
+                d["connected_to"] = parent
+                d["notes"].append("manuell zugeordnet (topology.json)")
+
+
 # ---------------------------------------------------------------------------
 # Scan
 # ---------------------------------------------------------------------------
-def run_scan(subnet=None, use_api=False, max_hosts=1024):
+def run_scan(subnet=None, use_api=False, max_hosts=1024, topo=None):
     local_ip, prefix, gateway, iface = local_net_info()
     dns_list = dns_servers()
     if subnet:
@@ -500,7 +622,7 @@ def run_scan(subnet=None, use_api=False, max_hosts=1024):
         # Klassifikation erneut mit Herstellerangabe
         for d in devices:
             classify(d, gateway, dns_list, local_ip)
-    add_connected_to(devices, gateway)
+    resolve_topology(devices, gateway, **(topo or {}))
 
     data = {
         "generated": datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
@@ -549,6 +671,12 @@ def demo_data():
             d("192.168.178.60", "50:C7:BF:10:20:30", "tv", "TP-Link", [8009], "smart"),
     ]
     add_connected_to(devices, "192.168.178.1")
+    demo_topo = {"192.168.178.40": "192.168.178.2", "192.168.178.31": "192.168.178.2",
+                 "192.168.178.60": "192.168.178.3", "192.168.178.51": "192.168.178.3"}
+    for d in devices:
+        if d["ip"] in demo_topo:
+            d["connected_to"] = demo_topo[d["ip"]]
+            d["notes"].append("Demo: haengt an %s" % demo_topo[d["ip"]])
     return {
         "generated": datetime.now().strftime("%d.%m.%Y %H:%M:%S") + " (Demo)",
         "subnet": "192.168.178.0/24",
@@ -942,6 +1070,16 @@ def main():
     ap.add_argument("--out-dir", default=".", help="Ausgabeverzeichnis (Standard: aktuelles Verzeichnis)")
     ap.add_argument("--json", default="scan.json", help="Dateiname der JSON-Ergebnisse")
     ap.add_argument("--html", default="netzwerkkarte.html", help="Dateiname der HTML-Karte")
+    ap.add_argument("--fritz-url", default=None,
+                    help="TR-064-URL der FRITZ!Box (Standard: http://<gateway>:49000; Env NETZ_FRITZ_URL)")
+    ap.add_argument("--fritz-user", default=None, help="TR-064-Benutzer (Env NETZ_FRITZ_USER; besser Env als CLI)")
+    ap.add_argument("--fritz-pass", default=None, help="TR-064-Passwort (Env NETZ_FRITZ_PASS; besser Env als CLI)")
+    ap.add_argument("--repeater-ips", default=None,
+                    help="kommagetrennte IPs der FRITZ!Repeater (Env NETZ_REPEATER_IPS)")
+    ap.add_argument("--lan-parent", default=None,
+                    help="IP des Geraets, an dem kabelgebundene Clients haengen (Env NETZ_LAN_PARENT, Standard: Gateway)")
+    ap.add_argument("--topology", default=None,
+                    help="Pfad zu topology.json mit manuellem Mapping {\"<ip oder mac>\": \"<parent-ip>\"} (Env NETZ_TOPOLOGY)")
     args = ap.parse_args()
 
     os.makedirs(args.out_dir, exist_ok=True)
@@ -953,7 +1091,16 @@ def main():
         with open(os.path.join(args.out_dir, args.json), "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
     else:
-        data = run_scan(subnet=args.subnet, use_api=args.vendor_api)
+        topo = {
+            "fritz_url": args.fritz_url,
+            "fritz_user": args.fritz_user,
+            "fritz_pass": args.fritz_pass,
+            "repeater_ips": ([x.strip() for x in args.repeater_ips.split(",") if x.strip()]
+                             if args.repeater_ips else None),
+            "lan_parent": args.lan_parent,
+            "topology_file": args.topology,
+        }
+        data = run_scan(subnet=args.subnet, use_api=args.vendor_api, topo=topo)
         with open(os.path.join(args.out_dir, args.json), "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
 

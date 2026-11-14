@@ -23,6 +23,14 @@ interaktiv: Zoom/Pan, Klick auf ein Gerät für Details (bei Router/Switch inkl.
   nach `${APP_DATA_DIR}/data/app` kopiert (dokumentierter Runtipi-Mechanismus). Nach einem App-Update
   am besten kurz neu installieren, damit die neueste Version des Skripts aktiv wird.
 
+## Exporte (PDF, CSV, Markdown, JSON)
+
+Über die App-Einstellung **`NETZ_EXPORT`** (z. B. `all` oder `pdf,csv,md`) werden bei jedem Scan
+zusätzliche Exporte nach `data/web/` geschrieben und in der Karte oben rechts als Download-Buttons
+angezeigt: `netzwerkkarte.pdf` (A4 quer, reine Standardbibliothek), `netzwerkkarte.csv`,
+`netzwerkkarte.md` sowie `scan.json` (JSON, immer vorhanden). Erreichbar z. B. über
+`https://<runtipi-host>:8399/netzwerkkarte.pdf`.
+
 ## Topologie: wer hängt an welchem Gerät?
 
 Über die App-Einstellungen (Env-Variablen) lässt sich die Zuordnung verbessern — in der Karte

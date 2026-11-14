@@ -8,7 +8,7 @@ services:
     command:
       - /bin/sh
       - -c
-      - mkdir -p /data/web; until [ -f /data/web/netzwerkkarte.html ]; do sleep 2; done; exec python3 -m http.server 8080 --directory /data/web
+      - until [ -f /data/web/netzwerkkarte.html ]; do sleep 2; done; exec python3 -m http.server 8080 --directory /data/web
     x-runtipi:
       is_main: true
       internal_port: 8080
@@ -26,7 +26,8 @@ services:
       NETZ_SUBNET: ${NETZ_SUBNET:-}
       NETZ_SCAN_INTERVAL: ${NETZ_SCAN_INTERVAL:-900}
     volumes:
-      - ./app:/opt/netzwerkkarte:ro
+      # data/ aus dem App-Repo wird von Runtipi nach ${APP_DATA_DIR}/data kopiert
+      - ${APP_DATA_DIR}/data/app:/opt/netzwerkkarte:ro
       - ${APP_DATA_DIR}/data:/data
     entrypoint:
       - /bin/sh

@@ -17,6 +17,9 @@ interaktiv: Zoom/Pan, Klick auf ein Gerät für Details, Suche, Kategoriefilter 
 - **Subnetz** und **Scan-Intervall** sind in den App-Einstellungen von Runtipi konfigurierbar
   (`NETZ_SUBNET`, z. B. `192.168.178.0/24`; `NETZ_SCAN_INTERVAL` in Sekunden, Standard 900).
 - Die Ergebnisse liegen unter `data/web/` (`netzwerkkarte.html` + `scan.json`).
+- Scanner-Skript und Entrypoint liegen unter `data/app/` im App-Repo und werden bei der Installation
+  nach `${APP_DATA_DIR}/data/app` kopiert (dokumentierter Runtipi-Mechanismus). Nach einem App-Update
+  am besten kurz neu installieren, damit die neueste Version des Skripts aktiv wird.
 
 ## In WikiJS einbetten
 

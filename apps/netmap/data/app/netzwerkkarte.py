@@ -14,6 +14,11 @@ Aufruf:
   python3 netzwerkkarte.py --demo                   # Demodaten erzeugen (Vorschau ohne Scan)
   python3 netzwerkkarte.py --vendor-api             # Hersteller zusätzlich online nachschlagen (api.macvendors.com)
 
+Topologie (wer hängt an welchem Switch/Repeater/Router), siehe README „Topologie“:
+  NETZ_FRITZ_USER/.._PASS, NETZ_REPEATER_IPS   # FRITZ!Box/Repeater per TR-064
+  NETZ_SNMP_COMMUNITY, NETZ_SNMP_SWITCHES      # SNMPv2c CAM-Tabelle verwalteter Switche
+  NETZ_LAN_PARENT, NETZ_TOPOLOGY               # LAN-Parent + manuelles topology.json
+
 Erkannt werden u. a.: Router/Gateway, Switche/Netzwerkgeraete, Server/NAS,
 Clients, Drucker und Smart-Home-/IoT-Geraete inkl. IP, MAC, Hostname,
 Hersteller (OUI) und offenen Ports.
@@ -21,6 +26,7 @@ Hersteller (OUI) und offenen Ports.
 
 import argparse
 import concurrent.futures as cf
+import csv
 import ipaddress
 import json
 import os
@@ -36,7 +42,7 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from datetime import datetime
 
-VERSION = "1.4.0"
+VERSION = "1.5.0"
 
 # ---------------------------------------------------------------------------
 # Hersteller-Datenbank (OUI, kuratierte Auswahl haeufiger Hersteller)
@@ -850,6 +856,125 @@ def demo_data():
 
 
 # ---------------------------------------------------------------------------
+# Exporte: CSV, Markdown, PDF (minimaler Pure-stdlib-PDF-Writer); JSON = scan.json
+# ---------------------------------------------------------------------------
+def _parent_label(data, d):
+    p = d.get("connected_to", "")
+    if not p:
+        return "Internet" if d.get("ip") == data.get("gateway") else "-"
+    dev = next((x for x in data.get("devices", []) if x["ip"] == p), None)
+    return ("%s (%s)" % (dev["hostname"], p)) if dev and dev.get("hostname") else p
+
+
+def _ports_str(d):
+    return "; ".join("%s %s" % (p[0], p[1]) for p in d.get("ports", []))
+
+
+def export_csv(data, path):
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["ip", "hostname", "mac", "vendor", "category", "connected_to", "ports", "notes"])
+        for d in data.get("devices", []):
+            w.writerow([d.get("ip", ""), d.get("hostname", ""), d.get("mac", ""), d.get("vendor", ""),
+                        d.get("category", ""), _parent_label(data, d), _ports_str(d),
+                        "; ".join(d.get("notes", []))])
+
+
+def export_md(data, path):
+    def esc(s):
+        return str(s or "").replace("|", "\\|").replace("\n", " ")
+    lines = [
+        "# Netzwerkkarte",
+        "",
+        "- Erzeugt: %s (netzwerkkarte.py v%s)" % (data.get("generated", ""), data.get("version", VERSION)),
+        "- Subnetz: %s · Gateway: %s · Geräte: %d" % (
+            data.get("subnet", ""), data.get("gateway", "") or "-", len(data.get("devices", []))),
+        "",
+        "| IP | Hostname | MAC | Hersteller | Kategorie | Verbunden mit | Offene Ports | Notizen |",
+        "|---|---|---|---|---|---|---|---|",
+    ]
+    for d in data.get("devices", []):
+        lines.append("| %s | %s | %s | %s | %s | %s | %s | %s |" % (
+            esc(d.get("ip")), esc(d.get("hostname")), esc(d.get("mac")), esc(d.get("vendor")),
+            esc(d.get("category")), esc(_parent_label(data, d)), esc(_ports_str(d)),
+            esc("; ".join(d.get("notes", [])))))
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+
+
+def _pdf_escape(s):
+    return (str(s or "").encode("cp1252", "replace").decode("latin-1")
+            .replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)"))
+
+
+def export_pdf(data, path):
+    """Minimaler PDF-Writer (nur Standardbibliothek): A4 quer, Geraetetabelle, paginiert."""
+    devs = data.get("devices", [])
+    W, H, M = 842, 595, 28
+    cols = [("IP", 62), ("Hostname", 95), ("MAC", 92), ("Hersteller", 100), ("Kategorie", 62),
+            ("Verbunden mit", 78), ("Ports", 150), ("Notizen", W - 2 * M - 639)]
+    rows = [[str(d.get("ip", "")), str(d.get("hostname", "")), str(d.get("mac", "")),
+             str(d.get("vendor", "")), str(d.get("category", "")), _parent_label(data, d),
+             _ports_str(d), "; ".join(d.get("notes", []))] for d in devs]
+    lead = 11
+    per_page = max(5, int((H - 2 * M - 40) / lead))
+    pages = [rows[i:i + per_page] for i in range(0, len(rows), per_page)] or [[]]
+
+    def cell(text, width, size):
+        maxc = max(4, int(width / (size * 0.52)))
+        return text if len(text) <= maxc else text[:maxc - 1] + "~"
+
+    def tline(font, size, x, y, text):
+        return "BT /%s %g Tf 1 0 0 1 %g %g Tm (%s) Tj ET" % (font, size, x, y, _pdf_escape(text))
+
+    objs = []
+    n_pages = len(pages)
+    kids = " ".join("%d 0 R" % (5 + 2 * i) for i in range(n_pages))
+    objs.append(b"<< /Type /Catalog /Pages 2 0 R >>")
+    objs.append(("<< /Type /Pages /Kids [%s] /Count %d >>" % (kids, n_pages)).encode("latin-1"))
+    objs.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>")
+    objs.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>")
+    for i, rows_page in enumerate(pages):
+        ops = [
+            tline("F2", 14, M, H - M + 6, "Netzwerkkarte (v%s)" % data.get("version", VERSION)),
+            tline("F1", 8, M, H - M - 8, "Erzeugt: %s | Subnetz: %s | Gateway: %s | Geraete: %d"
+                  % (data.get("generated", ""), data.get("subnet", ""),
+                     data.get("gateway", "") or "-", len(devs))),
+        ]
+        y = H - M - 26
+        x = M
+        for name, width in cols:
+            ops.append(tline("F2", 7, x, y, name))
+            x += width
+        ops.append("0.5 w %d %d m %d %d l S" % (M, y - 3, W - M, y - 3))
+        y -= lead
+        for r in rows_page:
+            x = M
+            for (name, width), val in zip(cols, r):
+                ops.append(tline("F1", 7, x, y, cell(val, width, 7)))
+                x += width
+            y -= lead
+        content = ("\n".join(ops) + "\n").encode("latin-1")
+        page_num = 5 + 2 * i
+        objs.append(("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 %d %d] "
+                     "/Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents %d 0 R >>"
+                     % (W, H, page_num + 1)).encode("latin-1"))
+        objs.append(b"<< /Length %d >>\nstream\n" % len(content) + content + b"endstream")
+    out = bytearray(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
+    offsets = [0] * (len(objs) + 1)
+    for i, body in enumerate(objs, start=1):
+        offsets[i] = len(out)
+        out += b"%d 0 obj\n" % i + body + b"\nendobj\n"
+    xref = len(out)
+    out += b"xref\n0 %d\n0000000000 65535 f \n" % (len(objs) + 1)
+    for i in range(1, len(objs) + 1):
+        out += b"%010d 00000 n \n" % offsets[i]
+    out += b"trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n" % (len(objs) + 1, xref)
+    with open(path, "wb") as f:
+        f.write(bytes(out))
+
+
+# ---------------------------------------------------------------------------
 # HTML-Generierung (single file, keine externenAbhaengigkeiten)
 # ---------------------------------------------------------------------------
 HTML_TEMPLATE = r"""<!DOCTYPE html>
@@ -879,6 +1004,8 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .views button, #btnReset { background:var(--panel2); border:1px solid var(--line); color:var(--text);
           border-radius:6px; padding:6px 12px; cursor:pointer; }
   .views button.active { background:var(--accent); border-color:var(--accent); color:#06121f; font-weight:600; }
+  #exports { display:flex; gap:6px; align-items:center; }
+  #exports a { color:var(--text); text-decoration:none; display:inline-block; }
   main { position:relative; height:calc(100% - 96px); }
   #mapWrap, #tableWrap { position:absolute; inset:0; }
   .hidden { display:none !important; }
@@ -936,6 +1063,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       <button id="btnTable">Tabelle</button>
       <button id="btnReset" title="Ansicht zuruecksetzen">Ansicht</button>
     </div>
+    <span id="exports"></span>
   </div>
 </header>
 <main>
@@ -1211,6 +1339,15 @@ document.getElementById("meta").textContent=
 document.getElementById("foot").textContent=
   "Erzeugt von netzwerkkarte.py v"+(DATA.version||"?")+" am "+DATA.generated+" \u00B7 Gateway: "+(DATA.gateway||"nicht gefunden")+
   " \u00B7 Hinweis: Unmanaged Switche/Hubs ohne eigene IP-Adresse sind im Netzwerk nicht sichtbar.";
+(function(){
+  var ex=document.getElementById("exports"), ef=DATA.export_files||{};
+  Object.keys(ef).forEach(function(k){
+    var a=document.createElement("a");
+    a.className="chip"; a.href=ef[k]; a.setAttribute("download","");
+    a.title="Download "+k.toUpperCase(); a.textContent="\\u2B07 "+k.toUpperCase();
+    ex.appendChild(a);
+  });
+})();
 buildGraph(); applyView(); applyFilters(); heat();
 </script>
 </body>
@@ -1246,7 +1383,18 @@ def main():
                     help="SNMPv2c Read-Community fuer verwaltete Switche (Env NETZ_SNMP_COMMUNITY, Standard: public)")
     ap.add_argument("--snmp-switches", default=None,
                     help="kommagetrennte Switch-IPs fuer SNMP-CAM-Abfrage (Env NETZ_SNMP_SWITCHES; leer = alle als Switch erkannten Geraete)")
+    ap.add_argument("--export", default=None,
+                    help="zusaetzliche Exporte erzeugen: pdf,csv,md,json,all (kommagetrennt; Env NETZ_EXPORT); JSON ist immer scan.json")
     args = ap.parse_args()
+
+    export_arg = args.export or os.environ.get("NETZ_EXPORT", "")
+    formats = []
+    for f in export_arg.split(","):
+        f = f.strip().lower()
+        if f == "all":
+            formats = ["pdf", "json", "csv", "md"]
+        elif f in ("pdf", "json", "csv", "md") and f not in formats:
+            formats.append(f)
 
     os.makedirs(args.out_dir, exist_ok=True)
     if args.from_file:
@@ -1254,8 +1402,6 @@ def main():
             data = json.load(f)
     elif args.demo:
         data = demo_data()
-        with open(os.path.join(args.out_dir, args.json), "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
     else:
         topo = {
             "fritz_url": args.fritz_url,
@@ -1270,8 +1416,21 @@ def main():
                               if args.snmp_switches else None),
         }
         data = run_scan(subnet=args.subnet, use_api=args.vendor_api, topo=topo)
-        with open(os.path.join(args.out_dir, args.json), "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+
+    base = os.path.splitext(args.html)[0]
+    data["exports"] = formats
+    data["export_files"] = {}
+    for f in formats:
+        if f == "json":
+            data["export_files"]["json"] = args.json
+            continue
+        path = os.path.join(args.out_dir, base + "." + f)
+        {"pdf": export_pdf, "csv": export_csv, "md": export_md}[f](data, path)
+        data["export_files"][f] = os.path.basename(path)
+        print("  Export %-4s: %s" % (f.upper(), path))
+
+    with open(os.path.join(args.out_dir, args.json), "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
     html_path = os.path.join(args.out_dir, args.html)
     with open(html_path, "w", encoding="utf-8") as f:

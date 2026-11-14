@@ -35,6 +35,7 @@ services:
       NETZ_TOPOLOGY: ${NETZ_TOPOLOGY:-}
       NETZ_SNMP_COMMUNITY: ${NETZ_SNMP_COMMUNITY:-}
       NETZ_SNMP_SWITCHES: ${NETZ_SNMP_SWITCHES:-}
+      NETZ_EXPORT: ${NETZ_EXPORT:-}
     volumes:
       # data/ aus dem App-Repo wird von Runtipi nach ${APP_DATA_DIR}/data kopiert
       - ${APP_DATA_DIR}/data/app:/opt/netzwerkkarte:ro

@@ -39,6 +39,11 @@ Panel und Tabelle zeigen „Verbunden mit“):
 - **Manuelles Mapping:** `NETZ_TOPOLOGY=/data/topology.json` mit
   `{"192.168.178.40": "192.168.178.2"}` (IP oder MAC → Parent-IP). Sinnvoll für Switche ohne
   SNMP/LLDP (z. B. TP-Link TL-SG108E — Stock-Firmware bietet keine MAC-Tabellen-API).
+- **SNMPv2c (CAM-Tabelle):** `NETZ_SNMP_COMMUNITY` (Standard: `public`) und optional
+  `NETZ_SNMP_SWITCHES` (kommagetrennte IPs; leer = alle als Switch erkannten Geräte). Liest die
+  MAC→Port-Tabelle (`dot1dTpFdbTable`) — funktioniert nur bei SNMP-fähigen verwalteten Switchen
+  (z. B. TL-SG3xxx, Netgear GSxxxE, MikroTik, UniFi), **nicht** beim TL-SG108E. Ergebnis in der
+  Karte: „Switch <IP> Port <N> (SNMP)“. Reihenfolge: TR-064 → SNMP → `topology.json` (manuell gewinnt).
 
 ## In WikiJS einbetten
 

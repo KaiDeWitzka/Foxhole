@@ -33,6 +33,8 @@ services:
       NETZ_REPEATER_IPS: ${NETZ_REPEATER_IPS:-}
       NETZ_LAN_PARENT: ${NETZ_LAN_PARENT:-}
       NETZ_TOPOLOGY: ${NETZ_TOPOLOGY:-}
+      NETZ_SNMP_COMMUNITY: ${NETZ_SNMP_COMMUNITY:-}
+      NETZ_SNMP_SWITCHES: ${NETZ_SNMP_SWITCHES:-}
     volumes:
       # data/ aus dem App-Repo wird von Runtipi nach ${APP_DATA_DIR}/data kopiert
       - ${APP_DATA_DIR}/data/app:/opt/netzwerkkarte:ro

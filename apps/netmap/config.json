@@ -11,7 +11,7 @@
   ],
   "description": "Scannt das lokale Netzwerk (Router/Gateway, Switche, Server/NAS, Clients, Drucker, Smart-Home/IoT) und erzeugt eine interaktive HTML-Netzwerkkarte mit IP-Adresse, MAC-Adresse, Hostname, Hersteller (OUI) und offenen Ports je Geraet. Die Karte wird zyklisch neu gescannt und laesst sich z. B. per iframe in WikiJS einbetten. Der Scanner laeuft im Host-Netzwerkmodus, damit MAC-Adressen per ARP aufgeloest werden. Unmanaged Switche/Hubs ohne eigene IP sind nicht sichtbar.",
   "tipi_version": 2,
-  "version": "1.3.0",
+  "version": "1.4.0",
   "source": "https://github.com/KaiDeWitzka/netmap",
   "website": "https://github.com/KaiDeWitzka/netmap",
   "exposable": true,
@@ -20,7 +20,7 @@
     "amd64"
   ],
   "created_at": 1794649747509,
-  "updated_at": 1794664670962,
+  "updated_at": 1794665777710,
   "dynamic_config": true,
   "min_tipi_version": "4.7.0",
   "form_fields": [
@@ -87,6 +87,22 @@
       "required": false,
       "default": "",
       "env_variable": "NETZ_TOPOLOGY"
+    },
+    {
+      "type": "password",
+      "label": "SNMP Read-Community (verwaltete Switche)",
+      "hint": "SNMPv2c Community für die CAM-Tabelle (MAC→Port); Standard: public. Nur für SNMP-fähige Switche (NICHT TL-SG108E — der kann kein SNMP)",
+      "required": false,
+      "default": "",
+      "env_variable": "NETZ_SNMP_COMMUNITY"
+    },
+    {
+      "type": "text",
+      "label": "SNMP Switch-IPs",
+      "hint": "kommagetrennt, z. B. 192.168.178.2,192.168.178.3; leer = automatisch alle als Switch erkannten Geräte abfragen",
+      "required": false,
+      "default": "",
+      "env_variable": "NETZ_SNMP_SWITCHES"
     }
   ]
 }

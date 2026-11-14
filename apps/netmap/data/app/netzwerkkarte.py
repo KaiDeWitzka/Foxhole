@@ -42,7 +42,7 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from datetime import datetime
 
-VERSION = "1.5.0"
+VERSION = "1.6.0"
 
 # ---------------------------------------------------------------------------
 # Hersteller-Datenbank (OUI, kuratierte Auswahl haeufiger Hersteller)
@@ -499,6 +499,17 @@ def tr064_hosts(base_url, user, password, timeout=5):
         return None
 
 
+def _web_config(key):
+    """Wert aus der in der Web-UI gepflegten Datei /data/config/settings.json (Runtipi-App)."""
+    p = "/data/config/settings.json"
+    if os.path.exists(p):
+        try:
+            return json.load(open(p, encoding="utf-8")).get(key, "") or ""
+        except Exception:
+            pass
+    return ""
+
+
 def load_topology_file(path):
     if not path or not os.path.exists(path):
         return {}
@@ -521,8 +532,9 @@ def resolve_topology(devices, gateway, fritz_url=None, fritz_user=None, fritz_pa
         "http://%s:49000" % gateway if gateway else "")
     if repeater_ips is None:
         repeater_ips = [x.strip() for x in os.environ.get("NETZ_REPEATER_IPS", "").split(",") if x.strip()]
-    lan_parent = lan_parent or os.environ.get("NETZ_LAN_PARENT", "") or gateway or ""
-    topology_file = topology_file or os.environ.get("NETZ_TOPOLOGY", "")
+    lan_parent = lan_parent or os.environ.get("NETZ_LAN_PARENT", "") or _web_config("lan_parent") or gateway or ""
+    topology_file = topology_file or os.environ.get("NETZ_TOPOLOGY", "") or (
+        "/data/config/topology.json" if os.path.exists("/data/config/topology.json") else "")
     if fritz_user and fritz_pass and fritz_url:
         box_hosts = tr064_hosts(fritz_url, fritz_user, fritz_pass) or []
         by_mac = {h["mac"]: h for h in box_hosts}
@@ -1006,6 +1018,15 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .views button.active { background:var(--accent); border-color:var(--accent); color:#06121f; font-weight:600; }
   #exports { display:flex; gap:6px; align-items:center; }
   #exports a { color:var(--text); text-decoration:none; display:inline-block; }
+  #topoWrap { overflow:auto; }
+  .topoPanel { max-width:780px; margin:24px auto; background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:16px; }
+  .topoPanel h2 { margin:0 0 8px; font-size:16px; }
+  .muted { color:var(--muted); font-size:12px; }
+  #topoJson { width:100%; height:220px; background:var(--panel2); color:var(--text); border:1px solid var(--line); border-radius:6px; font:12px/1.4 monospace; padding:8px; box-sizing:border-box; }
+  #lanParent { background:var(--panel2); border:1px solid var(--line); color:var(--text); border-radius:6px; padding:6px 10px; width:230px; }
+  #btnSaveTopo { background:var(--panel2); border:1px solid var(--line); color:var(--text); border-radius:6px; padding:6px 12px; cursor:pointer; }
+  .topoRow { display:flex; gap:10px; align-items:center; margin:10px 0; flex-wrap:wrap; }
+  .topoPanel pre { background:var(--panel2); border:1px solid var(--line); border-radius:6px; padding:8px; font-size:12px; overflow:auto; }
   main { position:relative; height:calc(100% - 96px); }
   #mapWrap, #tableWrap { position:absolute; inset:0; }
   .hidden { display:none !important; }
@@ -1061,6 +1082,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     <div class="views">
       <button id="btnMap" class="active">Karte</button>
       <button id="btnTable">Tabelle</button>
+      <button id="btnTopo">Topologie</button>
       <button id="btnReset" title="Ansicht zuruecksetzen">Ansicht</button>
     </div>
     <span id="exports"></span>
@@ -1082,6 +1104,21 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       </tr></thead>
       <tbody></tbody>
     </table>
+  </div>
+  <div id="topoWrap" class="hidden">
+    <div class="topoPanel">
+      <h2>Topologie bearbeiten</h2>
+      <p class="muted">Manuelles Mapping — überschreibt TR-064/SNMP: Schlüssel = IP oder MAC des Geräts, Wert = IP des Parent (Switch/Repeater/Router). Leer lassen löscht die Datei. Wirksam beim nächsten Scan.</p>
+      <textarea id="topoJson" spellcheck="false" placeholder='{"192.168.178.40": "192.168.178.2"}'></textarea>
+      <div class="topoRow">
+        <label class="muted">LAN-Parent: <input id="lanParent" type="text" placeholder="z. B. 192.168.178.2 (leer = Gateway)"></label>
+        <button id="btnSaveTopo">Speichern</button>
+        <span id="topoStatus" class="muted"></span>
+      </div>
+      <p class="muted">Beispiel:</p>
+      <pre>{"192.168.178.40": "192.168.178.2",
+ "AC:BC:32:44:55:66": "192.168.178.2"}</pre>
+    </div>
   </div>
 </main>
 <footer id="foot"></footer>
@@ -1326,13 +1363,36 @@ document.querySelectorAll("#tbl th").forEach(th=>{
     renderTable();
   });
 });
-const btnMap=document.getElementById("btnMap"), btnTable=document.getElementById("btnTable");
-btnMap.addEventListener("click",()=>{ btnMap.classList.add("active"); btnTable.classList.remove("active");
-  document.getElementById("mapWrap").classList.remove("hidden");
-  document.getElementById("tableWrap").classList.add("hidden"); });
-btnTable.addEventListener("click",()=>{ btnTable.classList.add("active"); btnMap.classList.remove("active");
-  document.getElementById("tableWrap").classList.remove("hidden");
-  document.getElementById("mapWrap").classList.add("hidden"); renderTable(); });
+const btnMap=document.getElementById("btnMap"), btnTable=document.getElementById("btnTable"),
+      btnTopo=document.getElementById("btnTopo");
+function setView(v){
+  btnMap.classList.toggle("active",v==="map");
+  btnTable.classList.toggle("active",v==="table");
+  btnTopo.classList.toggle("active",v==="topo");
+  document.getElementById("mapWrap").classList.toggle("hidden",v!=="map");
+  document.getElementById("tableWrap").classList.toggle("hidden",v!=="table");
+  document.getElementById("topoWrap").classList.toggle("hidden",v!=="topo");
+  if(v==="table") renderTable();
+  if(v==="topo") loadTopo();
+}
+btnMap.addEventListener("click",()=>setView("map"));
+btnTable.addEventListener("click",()=>setView("table"));
+btnTopo.addEventListener("click",()=>setView("topo"));
+function loadTopo(){
+  fetch("api/topology").then(r=>r.json()).then(j=>{
+    document.getElementById("topoJson").value=j.topology||"";
+    document.getElementById("lanParent").value=j.lan_parent||"";
+    document.getElementById("topoStatus").textContent="";
+  }).catch(()=>{ document.getElementById("topoStatus").textContent="Laden fehlgeschlagen"; });
+}
+document.getElementById("btnSaveTopo").addEventListener("click",()=>{
+  const st=document.getElementById("topoStatus"); st.textContent="Speichern ...";
+  fetch("api/topology",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({topology:document.getElementById("topoJson").value,
+                         lan_parent:document.getElementById("lanParent").value})})
+   .then(r=>r.json()).then(j=>{ st.textContent=j.ok?("Gespeichert ("+j.devices_mapped+" Eintraege) - wirkt beim naechsten Scan"):("Fehler: "+(j.error||"?")); })
+   .catch(()=>{ st.textContent="Fehler beim Speichern"; });
+});
 
 document.getElementById("meta").textContent=
   (DATA.devices||[]).length+" Geraete \u00B7 Subnetz "+DATA.subnet+" \u00B7 Scan: "+DATA.generated;

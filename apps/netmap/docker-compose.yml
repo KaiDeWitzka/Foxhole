@@ -7,10 +7,11 @@ services:
       - ${APP_DATA_DIR}/data:/data:ro
       - ${APP_DATA_DIR}/data/app:/opt/netzwerkkarte:ro
       - ${APP_DATA_DIR}/data/certs:/certs:ro
+      - ${APP_DATA_DIR}/data/config:/config:rw
     command:
       - /bin/sh
       - -c
-      - until [ -f /data/web/netzwerkkarte.html ]; do sleep 2; done; i=0; until [ -f /certs/cert.pem ] || [ $i -ge 30 ]; do sleep 2; i=$((i+1)); done; exec python3 /opt/netzwerkkarte/serve_https.py
+      - until [ -f /data/web/netzwerkkarte.html ]; do sleep 2; done; i=0; until [ -f /certs/cert.pem ] || [ $i -ge 30 ]; do sleep 2; i=$((i+1)); done; if [ -f /opt/netzwerkkarte/serve_https.py ]; then exec python3 /opt/netzwerkkarte/serve_https.py; else exec python3 -m http.server 8080 --directory /data/web; fi
     x-runtipi:
       is_main: true
       internal_port: 8080
@@ -31,8 +32,6 @@ services:
       NETZ_FRITZ_USER: ${NETZ_FRITZ_USER:-}
       NETZ_FRITZ_PASS: ${NETZ_FRITZ_PASS:-}
       NETZ_REPEATER_IPS: ${NETZ_REPEATER_IPS:-}
-      NETZ_LAN_PARENT: ${NETZ_LAN_PARENT:-}
-      NETZ_TOPOLOGY: ${NETZ_TOPOLOGY:-}
       NETZ_SNMP_COMMUNITY: ${NETZ_SNMP_COMMUNITY:-}
       NETZ_SNMP_SWITCHES: ${NETZ_SNMP_SWITCHES:-}
       NETZ_EXPORT: ${NETZ_EXPORT:-}
